@@ -21,7 +21,7 @@
 
 3. **База данных**:
    - Подключение к MySQL через SQLAlchemy
-   - Конфигурация через `.env`:
+   - Конфигурация через `.env.eaxmple`:
      ```ini
      DB_HOST=127.0.0.1
      DB_USER=bot_name
