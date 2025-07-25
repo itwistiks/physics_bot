@@ -1,8 +1,11 @@
 # 📚 Physics Bot - Telegram Bot
 
-![Python 3.11](https://www.python.org/downloads/windows/) Новые версии могут не работать
-![Open Server Panel](https://img.shields.io/badge/MySQL-8.4-orange)
-![phpMyAdmin](https://www.phpmyadmin.net/)
+[![Python 3.11](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/downloads/windows/)  
+*Новые версии могут не работать*
+[![Open Server Panel](https://img.shields.io/badge/Open_Server-5.3.8-lightgrey)](https://ospanel.io/)  
+*Версия с MySQL 8.4*
+[![phpMyAdmin](https://img.shields.io/badge/phpMyAdmin-5.2.1-orange)](https://www.phpmyadmin.net/)  
+*Для управления MySQL*
 
 ## 🚀 Первый день разработки: Базовый функционал
 
