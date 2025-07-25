@@ -30,30 +30,19 @@
      ```
 
 4. **Структура проекта**: 
-physics_bot/ 
+'''physics_bot/ 
 ├── core/
-
 │ ├── init.py
-
 │ ├── bot.py         # Инициализация бота
-
 │ └── handlers/      # Обработчики команд
-
 │     ├── init.py
-
 │     └── start.py   # Команда /start
-
 ├── config/
-
 │ ├── init.py 
-
 │ └── settings.py    # Настройки подключения
-
 ├── .env.example     # Шаблон конфига
-
 ├── requirements.txt # Зависимости
-
-└── README.md
+└── README.md'''
 
 
 
