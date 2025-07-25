@@ -29,9 +29,8 @@
      DB_NAME=db_name
      ```
 
-4. **Структура проекта**:
-physics_bot/
-
+4. **Структура проекта**: 
+physics_bot/ 
 ├── core/
 
 │ ├── init.py
