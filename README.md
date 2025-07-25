@@ -29,8 +29,9 @@
      DB_NAME=db_name
      ```
 
-4. **Структура проекта**: 
-'''physics_bot/ 
+4. **Структура проекта**:
+
+```physics_bot/ 
 ├── core/
 │ ├── init.py
 │ ├── bot.py         # Инициализация бота
@@ -42,7 +43,7 @@
 │ └── settings.py    # Настройки подключения
 ├── .env.example     # Шаблон конфига
 ├── requirements.txt # Зависимости
-└── README.md'''
+└── README.md```
 
 
 
@@ -50,13 +51,15 @@
 1. Клонируйте репозиторий:
 ```bash
 git clone https://github.com/ваш-логин/physics_bot.git
-cd physics_bot
+cd physics_bot```
 
 2. Настройте окружение:
+```bash
 python -m venv venv
 venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements.txt```
 
 3. Запустите тестовый скрипт:
+```bash
 python test_db.py  # Проверка подключения к MySQL
-python test.py     # Проверка работы бота
+python test.py     # Проверка работы бота```
