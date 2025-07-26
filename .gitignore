@@ -1,5 +1,15 @@
 venv/
+
+.idea/
+.vscode/
+
 .env
+
 __pycache__/
 *.pyc
+
 README/
+
+physics_bot.egg-info/
+
+alembic.ini
