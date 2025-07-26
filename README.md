@@ -11,8 +11,9 @@
 
 ### ✅ Что реализовано:
 1. **Создан новый бот в telegram**
-   - Сообщение в @BotFather
+   - Работа с @BotFather
    - Использование команды /newbot
+   - Получен токен
      
 2. **Ядро бота**:
    - Инициализация бота на aiogram 3.x
@@ -52,7 +53,7 @@ physics_bot/
 ### ⚙️ Установка:
 1. Клонируйте репозиторий:
 ```bash
-git clone https://github.com/ваш-логин/physics_bot.git
+git clone https://github.com/itwistiks/physics_bot.git
 cd physics_bot
 ```
 
