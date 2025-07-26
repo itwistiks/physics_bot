@@ -1,5 +1,9 @@
-from .start import register as register_start
+from .start import router as start_router
+from .db_test import router as db_test_router
+from .menu_handlers import router as menu_router
 
-
-def register_all_handlers(dp):
-    register_start(dp)
+routers = [
+    start_router,
+    db_test_router,
+    menu_router
+]
