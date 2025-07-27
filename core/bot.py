@@ -1,7 +1,7 @@
 # Импорт роутеров
 from core.handlers.start import router as start_router
 from core.handlers.db_test import router as db_test_router
-from core.handlers.menu_handlers import router as menu_handlers
+from .handlers.reply_handlers import router as menu_handlers
 
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode

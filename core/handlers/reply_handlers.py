@@ -16,12 +16,12 @@ from core.keyboards.reply import (
     main_menu_kb,
     practice_menu_kb,
     cancel_kb,
-    tasks_menu_kb
+    tasks_menu_kb,
+    task_navigation_kb
 )
 from core.keyboards.inline import (
     part_one_types_kb,
     answer_options_kb,
-    task_navigation_kb,
     theory_solution_kb
 )
 
@@ -31,22 +31,22 @@ import random
 
 from core.database.models import Task, Theory
 
-from core.services.task_service import get_random_task, prepare_task_text
+from core.services.task_utils import get_random_task
 from core.fsm.states import TaskStates
-
-from core.keyboards.inline_menu import (
-    theory_solution_kb,
-    task_navigation_kb
-)
+from core.services.task_display import display_task, display_task_by_id
+from core.services.task_utils import get_shuffled_task_ids
 
 
 router = Router()
 
 
-# Обработка текста после нажатия "Поддержка"
+# Обработчик текста после нажатия "Поддержка" и антиспам
 
 
 user_cooldowns = {}
+
+# Время до возможности написать следующее сообщение в поддержку
+time_stop = 10
 
 
 class SupportStates(StatesGroup):
@@ -59,8 +59,9 @@ async def support_start(message: types.Message, state: FSMContext):
 
     # Проверяем кулдаун
     last_request = user_cooldowns.get(user_id)
-    if last_request and (datetime.now() - last_request) < timedelta(minutes=10):
-        remaining = (last_request + timedelta(minutes=10)) - datetime.now()
+    if last_request and (datetime.now() - last_request) < timedelta(minutes=time_stop):
+        remaining = (last_request + timedelta(minutes=time_stop)
+                     ) - datetime.now()
         await message.answer(
             f"⏳ Вы сможете отправить следующее сообщение через {remaining.seconds // 60} мин.",
             reply_markup=main_menu_kb()
@@ -76,6 +77,8 @@ async def support_start(message: types.Message, state: FSMContext):
         reply_markup=cancel_kb()
     )
 
+# Обработчик если передумали писать в поддержку
+
 
 @router.message(Text("❌ Отменить"))
 async def cancel_support(message: types.Message, state: FSMContext):
@@ -84,6 +87,8 @@ async def cancel_support(message: types.Message, state: FSMContext):
         "Отправка сообщения отменена",
         reply_markup=main_menu_kb()
     )
+
+# Обработчик отправления сообщения в поддержку
 
 
 @router.message(SupportStates.waiting_for_message)
@@ -118,7 +123,7 @@ async def handle_support_message(message: types.Message, state: FSMContext):
         await state.clear()
 
 
-# Обработка кнопки "Практика"
+# Обработчик кнопки "Практика"
 
 
 @router.message(Text("✏️ Практика"))
@@ -129,22 +134,19 @@ async def practice_menu(message: types.Message):
     )
 
 
-# Обработка кнопки "Статистика"
+# Обработчик кнопки "Статистика"
 
 
 @router.message(Text("📊 Статистика"))
 async def show_stats(message: types.Message):
     # Здесь будет логика получения статистики
     await message.answer(
-        "📊 Ваша статистика:\n\n"
-        "✅ Решено задач: 15\n"
-        "📈 Правильных ответов: 80%\n"
-        "🔥 Рекордная серия: 5 верных подряд",
+        "Пока в разработке 🛠",
         reply_markup=main_menu_kb()
     )
 
 
-# Обработка кнопки "Репетитор"
+# Обработчик кнопки "Репетитор"
 
 
 @router.message(Text("👨‍🏫 Репетитор"))
@@ -162,7 +164,7 @@ async def tutor_redirect(message: types.Message):
     )
 
 
-# Обработка кнопки "Другие предметы"
+# Обработчик кнопки "Другие предметы"
 
 
 @router.message(Text("📚 Другие предметы"))
@@ -173,7 +175,7 @@ async def other_subjects(message: types.Message):
     )
 
 
-# Обработка кнопки "Назад"
+# Обработчик кнопки "Назад"
 
 
 @router.message(Text("✏️ Назад"))
@@ -184,7 +186,7 @@ async def back_to_main(message: types.Message):
     )
 
 
-# Обработка кнопки "Отменить"
+# Обработчик кнопки "Отменить"
 
 
 @router.message(Text("❌ Отменить"))
@@ -193,6 +195,9 @@ async def cancel_action(message: types.Message):
         "Действие отменено",
         reply_markup=main_menu_kb()
     )
+
+
+# Обработчик кнопки "Задания"
 
 
 @router.message(Text("📝 Задания"))
@@ -205,49 +210,55 @@ async def tasks_menu(message: types.Message):
 
 # Обработчик случайных задач
 
-async def display_task(message: Message, task: Task, state: FSMContext):
-    options_text = "\n".join(
-        [f"{chr(65+i)}. {option}" for i, option in enumerate(task.answer_options)])
-    text = (
-        f"📌 Тип задания: {task.type_number}\n\n"
-        f"{task.task_content['text']}\n\n"
-        f"Варианты ответов:\n{options_text}"
-    )
-
-    if task.task_content.get('image'):
-        msg = await message.answer_photo(
-            photo=task.task_content['image'],
-            caption=text,
-            reply_markup=answer_options_kb(task.answer_options, task.id)
-        )
-    else:
-        msg = await message.answer(
-            text,
-            reply_markup=answer_options_kb(task.answer_options, task.id)
-        )
-
-    await state.update_data(
-        task_message_id=msg.message_id,
-        current_task_id=task.id,
-        current_type=task.type_number
-    )
-    await state.set_state(TaskStates.WAITING_ANSWER)
-    await message.answer(
-        "Выберите действие:",
-        reply_markup=task_navigation_kb(task.type_number)
-    )
-
 
 @router.message(Text("🎲 Случайные задачи"))
-async def random_task(message: Message, state: FSMContext):
-    task = await get_random_task()
-    if not task:
+async def random_tasks(message: Message, state: FSMContext):
+    # Получаем перемешанные ID заданий ВСЕХ типов
+    task_ids = await get_shuffled_task_ids()
+
+    if not task_ids:
         await message.answer("❌ Задачи не найдены", reply_markup=tasks_menu_kb())
         return
 
-    await display_task(message, task, state)
+    await state.update_data(
+        TASK_LIST=task_ids,
+        CURRENT_INDEX=0,
+        IS_RANDOM_SESSION=True  # Флаг, что это случайная сессия
+    )
+
+    await display_task_by_id(message, task_ids[0], state)
 
 
+# Обработчики неактивных кнопок
+
+@router.message(Text("📋 Первая часть"))
+async def show_part_one_menu(message: Message):
+    await message.answer(
+        "Выберите тип задания первой части:",
+        reply_markup=part_one_types_kb()
+    )
+
+
+@router.message(Text("📘 Вторая часть"))
+async def part_two(message: types.Message):
+    await message.answer(
+        "Раздел в разработке 🛠",
+        reply_markup=tasks_menu_kb()
+    )
+
+
+# Обработчик кнопки "Назад"
+
+
+@router.message(Text("📝 Назад"))
+async def back_to_practice(message: types.Message):
+    await message.answer(
+        "Выберите тип практики:",
+        reply_markup=practice_menu_kb()
+    )
+
+
+# -------------| Шаблон вывода задания |------------- #
 # Обработчик следующего задания
 
 
@@ -278,6 +289,7 @@ async def handle_next_task(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Ошибка при загрузке задания", show_alert=True)
 
     await callback.answer()
+
 
 # Обработчик остановки практики
 
@@ -330,26 +342,52 @@ async def show_theory(callback: CallbackQuery):
 async def handle_solution(callback: CallbackQuery):
     task_id = int(callback.data.split(":")[1])
     # Здесь должна быть логика показа разбора
-    await callback.answer("Разбор будет здесь")
+    await callback.answer("Разбор будет здесь позже")
+
+    # reply_handlers.py
 
 
-# Обработчики неактивных кнопок
+@router.message(Text("▶️ Следующее задание"), StateFilter(TaskStates.SHOWING_RESULT))
+async def next_task(message: Message, state: FSMContext):
+    data = await state.get_data()
+    task_ids = data.get('TASK_LIST', [])
+    current_index = data.get('CURRENT_INDEX', 0)
+
+    if not task_ids:
+        await message.answer("❌ Список заданий пуст")
+        return
+
+    # Если это последнее задание в сессии
+    if current_index >= len(task_ids) - 1:
+        if data.get('IS_RANDOM_SESSION', True):
+            # Для случайной сессии - получаем новые случайные задания
+            new_task_ids = await get_shuffled_task_ids()
+        else:
+            # Для сессии по типу - начинаем сначала
+            new_task_ids = await get_shuffled_task_ids(
+                task_type=data.get('current_type')
+            )
+
+        if not new_task_ids:
+            await message.answer("❌ Не удалось загрузить новые задания")
+            return
+
+        await state.update_data(
+            TASK_LIST=new_task_ids,
+            CURRENT_INDEX=0
+        )
+        await display_task_by_id(message, new_task_ids[0], state)
+    else:
+        # Показываем следующее задание из текущего списка
+        new_index = current_index + 1
+        await state.update_data(CURRENT_INDEX=new_index)
+        await display_task_by_id(message, task_ids[new_index], state)
 
 
-@router.message(Text("📘 Вторая часть"))
-async def part_two(message: types.Message):
+@router.message(Text("⏹ Остановиться"))
+async def stop_practice(message: Message, state: FSMContext):
+    await state.clear()
     await message.answer(
-        "Раздел в разработке 🛠",
-        reply_markup=tasks_menu_kb()
-    )
-
-
-# Обработчик кнопки "Назад"
-
-
-@router.message(Text("📝 Назад"))
-async def back_to_practice(message: types.Message):
-    await message.answer(
-        "Выберите тип практики:",
+        "Практика завершена",
         reply_markup=practice_menu_kb()
     )

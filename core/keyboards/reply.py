@@ -1,3 +1,4 @@
+# Может стоит сделать builder.adjust(3)
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 
@@ -37,4 +38,11 @@ def tasks_menu_kb():
     builder.button(text="📘 Вторая часть")
     builder.button(text="📝 Назад")
     builder.adjust(2)
+    return builder.as_markup(resize_keyboard=True)
+
+
+def task_navigation_kb(task_type: int):
+    builder = ReplyKeyboardBuilder()
+    builder.button(text="▶️ Следующее задание")
+    builder.button(text="⏹ Остановиться")
     return builder.as_markup(resize_keyboard=True)

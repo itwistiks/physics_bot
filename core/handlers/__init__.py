@@ -1,6 +1,6 @@
 from .start import router as start_router
 from .db_test import router as db_test_router
-from .menu_handlers import router as menu_router
+from .reply_handlers import router as menu_router
 from .inline_handlers import router as inline_router
 
 routers = [

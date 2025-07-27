@@ -3,18 +3,28 @@ from aiogram.types import Message, CallbackQuery, InputMediaPhoto
 from aiogram.filters import Text, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 import random
+
 from config.database import AsyncSessionLocal
 from core.database.models import Task, Theory
-from core.keyboards.inline_menu import (
+from core.services.task_display import display_task
+
+from ..keyboards.inline import (
     part_one_types_kb,
     answer_options_kb,
-    task_navigation_kb,
     theory_solution_kb
 )
-from core.keyboards.main_menu import practice_menu_kb
+from ..keyboards.reply import (
+    practice_menu_kb,
+    task_navigation_kb
+)
+
+from core.services.task_display import display_task, display_task_by_id
+from core.services.task_utils import get_shuffled_task_ids
+
 
 router = Router()
 
@@ -26,24 +36,24 @@ class TaskStates(StatesGroup):
     SHOWING_RESULT = State()
 
 
-@router.message(Text("📋 Первая часть"))
-async def show_part_one_menu(message: Message):
-    await message.answer(
-        "Выберите тип задания первой части:",
-        reply_markup=part_one_types_kb()
-    )
-
-
 @router.callback_query(F.data.startswith("part_one:"))
 async def handle_task_type(callback: CallbackQuery, state: FSMContext):
-    try:
-        await callback.message.delete()
-    except Exception as e:
-        print(f"Ошибка при удалении сообщения: {e}")
-
     task_type = int(callback.data.split(":")[1])
-    await state.update_data(current_type=task_type)
-    await show_random_task(callback.message, task_type, state)
+
+    # Получаем перемешанные ID заданий КОНКРЕТНОГО типа
+    task_ids = await get_shuffled_task_ids(task_type=task_type)
+
+    if not task_ids:
+        await callback.answer("Задания этого типа не найдены", show_alert=True)
+        return
+
+    await state.update_data(
+        TASK_LIST=task_ids,
+        CURRENT_INDEX=0,
+        IS_RANDOM_SESSION=False  # Флаг, что это сессия по типу
+    )
+
+    await display_task_by_id(callback.message, task_ids[0], state)
     await callback.answer()
 
 
@@ -68,37 +78,6 @@ async def show_random_task(message: Message, task_type: int, state: FSMContext):
         print(f"Ошибка: {e}")
 
 
-async def display_task(message: Message, task: Task, state: FSMContext):
-    # Формируем текст задачи с вариантами ответов
-    options_text = "\n".join(
-        [f"{chr(65+i)}. {option}" for i, option in enumerate(task.answer_options)])
-    text = (
-        f"📌 Тип задания: {task.type_number}\n\n"
-        f"{task.task_content['text']}\n\n"
-        f"Варианты ответов:\n{options_text}"
-    )
-
-    # Если есть картинка
-    if task.task_content.get('image'):
-        msg = await message.answer_photo(
-            photo=task.task_content['image'],
-            caption=text,
-            reply_markup=answer_options_kb(task.answer_options, task.id)
-        )
-    else:
-        msg = await message.answer(
-            text,
-            reply_markup=answer_options_kb(task.answer_options, task.id)
-        )
-
-    await state.update_data(task_message_id=msg.message_id)
-    await state.set_state(TaskStates.WAITING_ANSWER)
-    await message.answer(
-        "Выберите действие:",
-        reply_markup=task_navigation_kb(task.type_number)
-    )
-
-
 @router.callback_query(F.data.startswith("answer:"), StateFilter(TaskStates.WAITING_ANSWER))
 async def handle_answer(callback: CallbackQuery, state: FSMContext):
     _, task_id, answer_idx = callback.data.split(":")
@@ -114,8 +93,7 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
         is_correct = (task.answer_options[answer_idx] == task.correct_answer)
 
         await callback.answer(
-            "✅ Правильно!" if is_correct else "❌ Неверно!",
-            show_alert=True
+            "✅ Правильно!" if is_correct else "❌ Неверно!"
         )
 
         # Показываем правильный ответ
@@ -125,79 +103,3 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
         )
 
     await state.set_state(TaskStates.SHOWING_RESULT)
-
-
-@router.message(Text("▶️ Следующее задание"), StateFilter(TaskStates.SHOWING_RESULT))
-async def next_task(message: Message, state: FSMContext):
-    data = await state.get_data()
-    task_type = data.get('current_type')
-
-    # Удаляем предыдущие сообщения
-    try:
-        await message.bot.delete_message(
-            chat_id=message.chat.id,
-            message_id=data.get('task_message_id')
-        )
-    except Exception as e:
-        print(f"Ошибка при удалении сообщения: {e}")
-
-    if task_type:
-        await show_random_task(message, task_type, state)
-    else:
-        await message.answer("Не удалось определить тип задания")
-
-
-@router.message(Text("⏹ Остановиться"))
-async def stop_practice(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer(
-        "Практика завершена",
-        reply_markup=practice_menu_kb()
-    )
-
-
-@router.callback_query(F.data.startswith("theory:"))
-async def show_theory(callback: CallbackQuery):
-    task_id = int(callback.data.split(":")[1])
-
-    async with AsyncSessionLocal() as session:
-        # Загружаем задание вместе с теорией за один запрос
-        stmt = select(Task).where(Task.id == task_id).options(
-            selectinload(Task.theory))
-        task = (await session.execute(stmt)).scalar_one_or_none()
-
-        if not task:
-            await callback.message.answer("⚠️ Задание не найдено")
-            await callback.answer()
-            return
-
-        if task.theory:
-            await callback.message.answer(
-                f"📚 Теория по заданию {task.type_number}:\n\n{task.theory.content}",
-                parse_mode="HTML"
-            )
-        else:
-            await callback.message.answer(
-                f"⚠️ Для задания {task.type_number} теория не найдена\n"
-                f"ID задания: {task.id}, Theory ID: {task.theory_id}"
-            )
-
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("solution:"))
-async def show_solution(callback: CallbackQuery):
-    task_id = int(callback.data.split(":")[1])
-
-    async with AsyncSessionLocal() as session:
-        task = await session.get(Task, task_id)
-        if task:
-            await callback.message.answer(
-                f"📝 Разбор задания {task.type_number}:\n\n"
-                f"Правильный ответ: {task.correct_answer}\n"
-                f"Объяснение: {task.solution or 'Разбор пока отсутствует'}"
-            )
-        else:
-            await callback.message.answer("Задание не найдено")
-
-    await callback.answer()

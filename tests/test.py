@@ -1,6 +1,5 @@
 from core.bot import bot, dp, register_handlers
 import asyncio
-# from physics_bot.core.bot import bot, dp, register_handlers
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
