@@ -106,70 +106,52 @@ python test.py     # Проверка работы бота
 
 ```
 physics_bot/
-├── config/                         # Конфигурационные файлы
-│   ├── __pycache__/                # Кэш Python
-│   ├── __init__.py                 # Инициализация пакета
-│   ├── database.py                 # Настройки подключения к БД
-│   └── settings.py                 # Основные настройки приложения
+├── config/
+│   ├── __init__.py         # Инициализация пакета
+│   ├── database.py         # Настройки AsyncSessionLocal и подключения к БД
+│   └── settings.py         # Конфигурационные параметры
 │
-├── core/                           # Основной код приложения
-│   ├── __pycache__/                # Кэш Python
-│   ├── __init__.py                 # Инициализация пакета
-│   │
-│   ├── database/                   # Работа с базой данных
-│   │   ├── __pycache__/
+├── core/
+│   ├── database/
 │   │   ├── __init__.py
-│   │   └── models.py               # Модели SQLAlchemy
+│   │   └── models.py       # Модели SQLAlchemy (Task, Theory и др.)
 │   │
-│   ├── fsm/                        # Конечные автоматы (FSM)
-│   │   ├── __pycache__/
+│   ├── fsm/
 │   │   ├── __init__.py
-│   │   └── states.py               # Состояния бота
+│   │   └── states.py       # Состояния бота (TaskStates и др.)
 │   │
-│   ├── handlers/                   # Обработчики сообщений
-│   │   ├── __pycache__/
+│   ├── handlers/
+│   │   ├── __init__.py     # Роутеры handlers
+│   │   ├── inline_handlers.py  # Обработчики inline-кнопок
+│   │   ├── reply_handlers.py   # Обработчики reply-кнопок
+│   │   └── start.py        # Обработчики команды /start
+│   │
+│   ├── keyboards/
 │   │   ├── __init__.py
-│   │   ├── db_test.py              # Тесты базы данных
-│   │   ├── inline_handlers.py      # Обработчики инлайн-кнопок
-│   │   ├── menu_handlers.py        # Обработчики меню
-│   │   └── start.py                # Обработчики команд /start
+│   │   ├── inline.py       # Все inline-клавиатуры
+│   │   └── reply.py        # Все reply-клавиатуры
 │   │
-│   ├── keyboards/                  # Клавиатуры бота
-│   │   ├── __pycache__/
-│   │   ├── __init__.py
-│   │   ├── inline_menu.py          # Инлайн-меню (устаревшее)
-│   │   ├── inline.py               # Инлайн-клавиатуры
-│   │   ├── main_menu.py            # Главное меню
-│   │   └── reply.py                # Reply-клавиатуры
+│   ├── services/
+│   │   ├── __init__.py     # Экспорт сервисов
+│   │   ├── task_display.py # Логика отображения заданий
+│   │   ├── task_service.py # Основные сервисные функции
+│   │   └── task_utils.py   # Утилиты для работы с БД
 │   │
-│   ├── services/                   # Сервисные функции
-│   │   ├── __pycache__/
-│   │   ├── __init__.py
-│   │   └── task_service.py         # Сервис работы с заданиями
-│   │
-│   └── bot.py                      # Основной файл инициализации бота
+│   ├── __init__.py
+│   └── bot.py              # Основной файл инициализации бота
 │
-├── migrations/                     # Миграции базы данных
-│   ├── __pycache__/
-│   ├── versions/                   # Файлы миграций
-│   │   ├── __pycache__/
-│   │   ├── 02dc0f20e0f7_initial_tables.py
-│   │   ├── 4124def56530_fix_relationships_between_task_and_py
-│   │   └── a740b916aae3_fix_relationships_between_task_and_py
-│   │
-│   ├── env.py                      # Конфиг Alembic
-│   ├── README                      # Документация
-│   └── script.py.mako              # Шаблон для создания миграций
+├── migrations/             # Миграции базы данных
 │
-├── physics_bot.egg-info/           # Метаданные пакета
-├── tests/                          # Тесты
-├── venv/                           # Виртуальное окружение
+├── tests/
+│   ├── __init__.py
+│   ├── test_db_bot.py      # Тесты (не импортируются в bot.py)
+│   ├── test_db.py
+│   └── test.py             # Основной файл запуска бота. Нужно вынести в отдельное место и переименовать
 │
-├── .env                            # Переменные окружения
-├── .env.example                    # Шаблон .env файла
-├── .gitignore                      # Игнорируемые файлы
-├── alembic.ini                     # Конфигурация Alembic
-├── README.md                       # Документация проекта
-├── requirements.txt                # Зависимости
-└── setup.py                        # Настройка пакета
+├── .env                    # Переменные окружения
+├── .gitignore              # Игнорируемые файлы
+├── alembic.ini             # Конфигурация Alembic
+├── README.md               # Документация проекта
+├── requirements.txt        # Зависимости
+└── setup.py                # Настройка пакета
 ```
