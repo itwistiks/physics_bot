@@ -16,7 +16,6 @@ async def display_task(message: Message, task: Task, state: FSMContext):
         f"📌 Номет задания: {task.id}\n\n"
         f"Тип задания: {task.type_number}\n\n"
         f"{task.task_content['text']}\n\n"
-        f"Варианты ответов:\n{options_text}"
     )
 
     if task.task_content.get('image'):

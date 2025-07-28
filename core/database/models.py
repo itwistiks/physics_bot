@@ -19,7 +19,15 @@ class Complexity(PyEnum):
 class UserStatus(PyEnum):
     NO_SUB = 'no_sub'
     SUB = 'sub'
+    PRO_SUB = 'pro_sub'
     TEACHER = 'teacher'
+    MODERATOR = 'moderator'
+    ADMIN = 'admin'
+
+
+class PartNumber(PyEnum):
+    PART_ONE = 'part_one'
+    PART_TWO = 'part_two'
 
 
 class ReminderType(PyEnum):
@@ -60,6 +68,7 @@ class Task(Base):
     type_number = Column(Integer)  # Номер типа задания в ОГЭ (1-25)
     topic_id = Column(Integer, ForeignKey('topics.id'))
     subtopic_id = Column(Integer, ForeignKey('subtopics.id'), nullable=True)
+    part_number = Column(Enum(PartNumber))  # Первая или вторая часть
     complexity = Column(Enum(Complexity))
     task_content = Column(JSON)  # {"text": "...", "image": "url"}
     correct_answer = Column(Text)
@@ -78,7 +87,7 @@ class Theory(Base):
     topic_id = Column(Integer, ForeignKey('topics.id'))
     subtopic_id = Column(Integer, ForeignKey('subtopics.id'), nullable=True)
     complexity = Column(Enum(Complexity))
-    content = Column(Text)  # Markdown?
+    content = Column(Text)  # Markdown
     examples = Column(JSON)  # [{"task": "...", "solution": "..."}]
 
     topic = relationship("Topic", back_populates="theories")
@@ -92,6 +101,7 @@ class Theory(Base):
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
+    username = Column(String(50), nullable=True)
     registration_date = Column(DateTime, default=datetime.datetime.utcnow)
     status = Column(Enum(UserStatus), default=UserStatus.NO_SUB)
     phone = Column(String(20), nullable=True)
@@ -106,16 +116,15 @@ class User(Base):
 
 class UserStat(Base):
     __tablename__ = 'user_stats'
+
     user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
-    topic_id = Column(Integer, ForeignKey('topics.id'), primary_key=True)
-    subtopic_id = Column(Integer, ForeignKey('subtopics.id'), primary_key=True)
+    # {"subtopic_id": {"correct": X, "wrong": Y}}
+    subtopics_stats = Column(JSON, default={})
     correct_answers = Column(Integer, default=0)
     total_attempts = Column(Integer, default=0)
     percentage = Column(Float, default=0.0)
 
     user = relationship("User", back_populates="stats")
-    topic = relationship("Topic")
-    subtopic = relationship("Subtopic")
 
 
 class UserProgress(Base):
@@ -153,6 +162,7 @@ class Achievement(Base):
     description = Column(Text)
     reward_points = Column(Integer)
     condition = Column(Text)  # Логика проверки
+    icon = Column(String(255))  # URL иконки
 
     user_achievements = relationship(
         "UserAchievement", back_populates="achievement")

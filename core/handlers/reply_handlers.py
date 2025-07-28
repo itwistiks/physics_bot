@@ -347,20 +347,33 @@ async def handle_solution(callback: CallbackQuery):
     # reply_handlers.py
 
 
-@router.message(Text("▶️ Следующее задание"), StateFilter(TaskStates.SHOWING_RESULT))
+@router.message(Text("▶️ Следующее задание"))
 async def next_task(message: Message, state: FSMContext):
     data = await state.get_data()
     task_ids = data.get('TASK_LIST', [])
     current_index = data.get('CURRENT_INDEX', 0)
 
+    # Удаляем предыдущее сообщение с заданием (если есть)
+    if 'task_message_id' in data:
+        try:
+            await message.bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=data['task_message_id']
+            )
+        except Exception as e:
+            print(f"Ошибка при удалении сообщения: {e}")
+
     if not task_ids:
         await message.answer("❌ Список заданий пуст")
         return
 
-    # Если это последнее задание в сессии
-    if current_index >= len(task_ids) - 1:
+    # Вычисляем индекс следующего задания
+    new_index = current_index + 1
+
+    # Если дошли до конца списка
+    if new_index >= len(task_ids):
         if data.get('IS_RANDOM_SESSION', True):
-            # Для случайной сессии - получаем новые случайные задания
+            # Для случайной сессии - получаем новые задания
             new_task_ids = await get_shuffled_task_ids()
         else:
             # Для сессии по типу - начинаем сначала
@@ -378,10 +391,12 @@ async def next_task(message: Message, state: FSMContext):
         )
         await display_task_by_id(message, new_task_ids[0], state)
     else:
-        # Показываем следующее задание из текущего списка
-        new_index = current_index + 1
+        # Показываем следующее задание
         await state.update_data(CURRENT_INDEX=new_index)
         await display_task_by_id(message, task_ids[new_index], state)
+
+    # Сбрасываем состояние, чтобы можно было пропускать задания
+    await state.set_state(TaskStates.WAITING_ANSWER)
 
 
 @router.message(Text("⏹ Остановиться"))
