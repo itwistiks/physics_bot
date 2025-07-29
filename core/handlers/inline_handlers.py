@@ -133,7 +133,7 @@ async def handle_button_answer(callback: CallbackQuery, state: FSMContext):
                 #     is_correct=is_correct
                 # )
 
-        # Редактируем исходное сообщение с заданием
+        # # Редактируем исходное сообщение с заданием
         # await callback.message.edit_reply_markup(
         #     reply_markup=None  # Убираем кнопки ответов
         # )
@@ -163,28 +163,41 @@ async def show_theory(callback: CallbackQuery):
     task_id = int(callback.data.split(":")[1])
 
     async with AsyncSessionLocal() as session:
-        # Загружаем задание вместе с теорией за один запрос
-        stmt = select(Task).where(Task.id == task_id).options(
-            selectinload(Task.theory))
-        task = (await session.execute(stmt)).scalar_one_or_none()
+        try:
+            async with session.begin():  # Явное управление транзакцией
+                stmt = select(Task).where(Task.id == task_id).options(
+                    selectinload(Task.theory).selectinload(Theory.topic)
+                )
+                task = (await session.execute(stmt)).scalar_one_or_none()
 
-        if not task:
-            await callback.message.answer("⚠️ Задание не найдено")
-            await callback.answer()
-            return
+                if not task:
+                    await callback.answer("⚠️ Задание не найдено", show_alert=True)
+                    return  # Транзакция завершится автоматически
 
-        if task.theory:
-            await callback.message.answer(
-                f"📚 Теория по заданию {task.type_number}:\n\n{task.theory.content}",
-                parse_mode="HTML"
-            )
-        else:
-            await callback.message.answer(
-                f"⚠️ Для задания {task.type_number} теория не найдена\n"
-                f"ID задания: {task.id}, Theory ID: {task.theory_id}"
-            )
+                if not task.theory:
+                    await callback.answer("⚠️ Теория отсутствует", show_alert=True)
+                    return
 
-    await callback.answer()
+                topic_name = task.theory.topic.title_ru if task.theory.topic else "Без темы"
+                theory_text = (
+                    f"📚 Теория по заданию {task.type_number}\n"
+                    f"Тема: {topic_name}\n\n"
+                    f"{task.theory.content}"
+                )
+
+                try:
+                    await callback.message.answer(theory_text, parse_mode="Markdown")
+                except Exception as e:
+                    logger.error(f"Markdown error: {e}")
+                    await callback.message.answer(theory_text)
+
+                # Транзакция закоммитится автоматически при выходе из блока
+
+        except Exception as e:
+            logger.error(f"Database error: {e}", exc_info=True)
+            await callback.answer("⚠️ Ошибка загрузки теории", show_alert=True)
+        finally:
+            await callback.answer()  # Всегда отвечаем на callback
 
 
 # Обработчик разбора

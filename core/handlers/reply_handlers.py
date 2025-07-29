@@ -349,35 +349,32 @@ async def next_task(message: Message, state: FSMContext):
     try:
         data = await state.get_data()
         task_ids = data.get('TASK_LIST', [])
+        current_idx = data.get('CURRENT_INDEX', 0)
 
         if not task_ids:
-            await message.answer("❌ Список заданий пуст")
+            await message.answer("❌ Список заданий пуст", reply_markup=practice_menu_kb())
+            await state.clear()
             return
 
-        current_idx = data.get('CURRENT_INDEX', 0) + 1
-        if current_idx >= len(task_ids):
-            current_idx = 0  # или завершить сессию
-
-        # Удаляем предыдущее сообщение с заданием
-        if 'task_message_id' in data:
-            try:
-                await message.bot.delete_message(
-                    chat_id=message.chat.id,
-                    message_id=data['task_message_id']
-                )
-            except Exception as e:
-                logger.error(f"Error deleting message: {e}")
+        # Проверяем, не закончились ли задания
+        if current_idx + 1 >= len(task_ids):
+            await message.answer("🎉 Вы завершили все задания в этой сессии!", reply_markup=practice_menu_kb())
+            await state.clear()
+            return
 
         # Показываем следующее задание
-        await display_task_by_id(message, task_ids[current_idx], state)
-        await state.update_data(CURRENT_INDEX=current_idx)
+        next_idx = current_idx + 1
+        await display_task_by_id(message, task_ids[next_idx], state)
+        await state.update_data(CURRENT_INDEX=next_idx)
 
     except Exception as e:
-        logger.error(f"Error in next_task: {e}")
-        await message.answer("⚠️ Ошибка загрузки следующего задания")
+        logger.error(f"Error in next_task: {e}", exc_info=True)
+        await message.answer("⚠️ Ошибка загрузки следующего задания", reply_markup=practice_menu_kb())
+        await state.clear()
 
 
 # Обработчик текста
+
 
 @router.message(F.text, StateFilter(TaskStates.WAITING_ANSWER))
 async def handle_text_answer(message: Message, state: FSMContext):
