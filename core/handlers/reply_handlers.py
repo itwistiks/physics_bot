@@ -11,6 +11,7 @@ from aiogram.filters import or_f, StateFilter
 from aiogram import Router, types, F
 from aiogram.filters import Text
 from aiogram.types import Message, CallbackQuery
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from core.keyboards.reply import (
     main_menu_kb,
@@ -31,13 +32,79 @@ import random
 
 from core.database.models import Task, Theory
 
-from core.services.task_utils import get_random_task
 from core.fsm.states import TaskStates
+
 from core.services.task_display import display_task, display_task_by_id
 from core.services.task_utils import get_shuffled_task_ids
+# from core.services.answer_processing import process_answer
+from core.services.task_utils import get_random_task
+from core.services.answer_checker import check_answer
+from core.services.stats_service import update_user_stats
+
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 router = Router()
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # #
+'''ГЛАВНОЕ МЕНЮ'''
+# # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+# Обработчик кнопки "Практика"
+
+
+@router.message(Text("✏️ Практика"))
+async def practice_menu(message: types.Message):
+    await message.answer(
+        "Выберите тип практики",
+        reply_markup=practice_menu_kb()
+    )
+
+
+# Обработчик кнопки "Статистика"
+
+
+@router.message(Text("📊 Статистика"))
+async def show_stats(message: types.Message):
+    # Здесь будет логика получения статистики
+    await message.answer(
+        "Пока в разработке 🛠",
+        reply_markup=main_menu_kb()
+    )
+
+
+# Обработчик кнопки "Репетитор"
+
+
+@router.message(Text("👨‍🏫 Репетитор"))
+async def tutor_redirect(message: types.Message):
+    await message.answer(
+        "Переход к репетитору:",
+        reply_markup=types.InlineKeyboardMarkup(
+            inline_keyboard=[[
+                types.InlineKeyboardButton(
+                    text="Перейти на сайт репетитора",
+                    url="https://google.com"
+                )
+            ]]
+        )
+    )
+
+
+# Обработчик кнопки "Другие предметы"
+
+
+@router.message(Text("📚 Другие предметы"))
+async def other_subjects(message: types.Message):
+    await message.answer(
+        "Пока в разработке 🛠",
+        reply_markup=main_menu_kb()
+    )
 
 
 # Обработчик текста после нажатия "Поддержка" и антиспам
@@ -123,23 +190,49 @@ async def handle_support_message(message: types.Message, state: FSMContext):
         await state.clear()
 
 
-# Обработчик кнопки "Практика"
+# # # # # # # # # # # # # # # # # # # # # # # # # # # #
+'''ПРАКТИКА МЕНЮ'''
+# # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 
-@router.message(Text("✏️ Практика"))
-async def practice_menu(message: types.Message):
+# Обработчик кнопки "Задания"
+
+
+@router.message(Text("📝 Задания"))
+async def tasks_menu(message: types.Message):
     await message.answer(
-        "Выберите тип практики",
-        reply_markup=practice_menu_kb()
+        "Выберите тип практики:",
+        reply_markup=tasks_menu_kb()
     )
 
 
-# Обработчик кнопки "Статистика"
+# Обработчик кнопки "Вариант"
 
 
-@router.message(Text("📊 Статистика"))
-async def show_stats(message: types.Message):
-    # Здесь будет логика получения статистики
+@router.message(Text("📋 Вариант"))
+async def other_subjects(message: types.Message):
+    await message.answer(
+        "Пока в разработке 🛠",
+        reply_markup=main_menu_kb()
+    )
+
+
+# Обработчик кнопки "Темы"
+
+
+@router.message(Text("📖 Темы"))
+async def other_subjects(message: types.Message):
+    await message.answer(
+        "Пока в разработке 🛠",
+        reply_markup=main_menu_kb()
+    )
+
+
+# Обработчик кнопки "Сложные задачи"
+
+
+@router.message(Text("🔥 Сложные задачи"))
+async def other_subjects(message: types.Message):
     await message.answer(
         "Пока в разработке 🛠",
         reply_markup=main_menu_kb()
@@ -164,17 +257,6 @@ async def tutor_redirect(message: types.Message):
     )
 
 
-# Обработчик кнопки "Другие предметы"
-
-
-@router.message(Text("📚 Другие предметы"))
-async def other_subjects(message: types.Message):
-    await message.answer(
-        "Пока в разработке 🛠",
-        reply_markup=main_menu_kb()
-    )
-
-
 # Обработчик кнопки "Назад"
 
 
@@ -186,29 +268,12 @@ async def back_to_main(message: types.Message):
     )
 
 
-# Обработчик кнопки "Отменить"
+# # # # # # # # # # # # # # # # # # # # # # # # # # # #
+'''ЗАДАНИЕ МЕНЮ'''
+# # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 
-@router.message(Text("❌ Отменить"))
-async def cancel_action(message: types.Message):
-    await message.answer(
-        "Действие отменено",
-        reply_markup=main_menu_kb()
-    )
-
-
-# Обработчик кнопки "Задания"
-
-
-@router.message(Text("📝 Задания"))
-async def tasks_menu(message: types.Message):
-    await message.answer(
-        "Выберите тип практики:",
-        reply_markup=tasks_menu_kb()
-    )
-
-
-# Обработчик случайных задач
+# Обработчик кнопки "Случайные задачи"
 
 
 @router.message(Text("🎲 Случайные задачи"))
@@ -229,7 +294,7 @@ async def random_tasks(message: Message, state: FSMContext):
     await display_task_by_id(message, task_ids[0], state)
 
 
-# Обработчики неактивных кнопок
+# Обработчик кнопки "Первая часть"
 
 @router.message(Text("📋 Первая часть"))
 async def show_part_one_menu(message: Message):
@@ -237,6 +302,9 @@ async def show_part_one_menu(message: Message):
         "Выберите тип задания первой части:",
         reply_markup=part_one_types_kb()
     )
+
+
+# Обработчик кнопки "Вторая часть"
 
 
 @router.message(Text("📘 Вторая часть"))
@@ -258,145 +326,10 @@ async def back_to_practice(message: types.Message):
     )
 
 
-# -------------| Шаблон вывода задания |------------- #
-# Обработчик следующего задания
-
-
-@router.callback_query(F.data.startswith("next_task:"))
-async def handle_next_task(callback: CallbackQuery, state: FSMContext):
-    try:
-        task_type = int(callback.data.split(":")[1])
-        await state.update_data(current_type=task_type)
-
-        # Загружаем задание ВМЕСТЕ с теорией
-        async with AsyncSessionLocal() as session:
-            stmt = select(Task).where(
-                Task.type_number == task_type
-            ).options(
-                selectinload(Task.theory)  # Жадно загружаем теорию
-            )
-            tasks = (await session.execute(stmt)).scalars().all()
-
-            if not tasks:
-                await callback.answer("Задания этого типа не найдены", show_alert=True)
-                return
-
-            task = random.choice(tasks)
-            await display_task(callback.message, task, state)
-
-    except Exception as e:
-        print(f"Error in next_task: {e}")
-        await callback.answer("Ошибка при загрузке задания", show_alert=True)
-
-    await callback.answer()
+# -------------| Обработчики reply-кнопок задачи |------------- #
 
 
 # Обработчик остановки практики
-
-
-@router.callback_query(F.data == "stop_practice")
-async def handle_stop_practice(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.answer(
-        "Практика завершена",
-        reply_markup=practice_menu_kb()
-    )
-    await callback.answer()
-
-
-# Обработчик теории
-
-
-@router.callback_query(F.data.startswith("theory:"))
-async def show_theory(callback: CallbackQuery):
-    task_id = int(callback.data.split(":")[1])
-
-    async with AsyncSessionLocal() as session:
-        # Загружаем задание вместе с теорией за один запрос
-        stmt = select(Task).where(Task.id == task_id).options(
-            selectinload(Task.theory))
-        task = (await session.execute(stmt)).scalar_one_or_none()
-
-        if not task:
-            await callback.message.answer("⚠️ Задание не найдено")
-            await callback.answer()
-            return
-
-        if task.theory:
-            await callback.message.answer(
-                f"📚 Теория по заданию {task.type_number}:\n\n{task.theory.content}",
-                parse_mode="HTML"
-            )
-        else:
-            await callback.message.answer(
-                f"⚠️ Для задания {task.type_number} теория не найдена\n"
-                f"ID задания: {task.id}, Theory ID: {task.theory_id}"
-            )
-
-    await callback.answer()
-
-# Обработчик разбора
-
-
-@router.callback_query(F.data.startswith("solution:"))
-async def handle_solution(callback: CallbackQuery):
-    task_id = int(callback.data.split(":")[1])
-    # Здесь должна быть логика показа разбора
-    await callback.answer("Разбор будет здесь позже")
-
-    # reply_handlers.py
-
-
-@router.message(Text("▶️ Следующее задание"))
-async def next_task(message: Message, state: FSMContext):
-    data = await state.get_data()
-    task_ids = data.get('TASK_LIST', [])
-    current_index = data.get('CURRENT_INDEX', 0)
-
-    # Удаляем предыдущее сообщение с заданием (если есть)
-    if 'task_message_id' in data:
-        try:
-            await message.bot.delete_message(
-                chat_id=message.chat.id,
-                message_id=data['task_message_id']
-            )
-        except Exception as e:
-            print(f"Ошибка при удалении сообщения: {e}")
-
-    if not task_ids:
-        await message.answer("❌ Список заданий пуст")
-        return
-
-    # Вычисляем индекс следующего задания
-    new_index = current_index + 1
-
-    # Если дошли до конца списка
-    if new_index >= len(task_ids):
-        if data.get('IS_RANDOM_SESSION', True):
-            # Для случайной сессии - получаем новые задания
-            new_task_ids = await get_shuffled_task_ids()
-        else:
-            # Для сессии по типу - начинаем сначала
-            new_task_ids = await get_shuffled_task_ids(
-                task_type=data.get('current_type')
-            )
-
-        if not new_task_ids:
-            await message.answer("❌ Не удалось загрузить новые задания")
-            return
-
-        await state.update_data(
-            TASK_LIST=new_task_ids,
-            CURRENT_INDEX=0
-        )
-        await display_task_by_id(message, new_task_ids[0], state)
-    else:
-        # Показываем следующее задание
-        await state.update_data(CURRENT_INDEX=new_index)
-        await display_task_by_id(message, task_ids[new_index], state)
-
-    # Сбрасываем состояние, чтобы можно было пропускать задания
-    await state.set_state(TaskStates.WAITING_ANSWER)
 
 
 @router.message(Text("⏹ Остановиться"))
@@ -406,3 +339,84 @@ async def stop_practice(message: Message, state: FSMContext):
         "Практика завершена",
         reply_markup=practice_menu_kb()
     )
+
+
+# Обработчик следующего задания
+
+
+@router.message(Text("▶️ Следующее задание"))
+async def next_task(message: Message, state: FSMContext):
+    try:
+        data = await state.get_data()
+        task_ids = data.get('TASK_LIST', [])
+
+        if not task_ids:
+            await message.answer("❌ Список заданий пуст")
+            return
+
+        current_idx = data.get('CURRENT_INDEX', 0) + 1
+        if current_idx >= len(task_ids):
+            current_idx = 0  # или завершить сессию
+
+        # Удаляем предыдущее сообщение с заданием
+        if 'task_message_id' in data:
+            try:
+                await message.bot.delete_message(
+                    chat_id=message.chat.id,
+                    message_id=data['task_message_id']
+                )
+            except Exception as e:
+                logger.error(f"Error deleting message: {e}")
+
+        # Показываем следующее задание
+        await display_task_by_id(message, task_ids[current_idx], state)
+        await state.update_data(CURRENT_INDEX=current_idx)
+
+    except Exception as e:
+        logger.error(f"Error in next_task: {e}")
+        await message.answer("⚠️ Ошибка загрузки следующего задания")
+
+
+# Обработчик текста
+
+# Настройка логгера
+@router.message(F.text, StateFilter(TaskStates.WAITING_ANSWER))
+async def handle_text_answer(message: Message, state: FSMContext):
+    """Обработчик текстовых ответов с сохранением check_answer()"""
+    try:
+        # 1. Получаем данные из состояния
+        data = await state.get_data()
+        task_id = data['current_task_id']
+
+        # 2. Создаем отдельную сессию для check_answer
+        async with AsyncSessionLocal() as check_session:
+            # 3. Получаем задание в отдельной транзакции
+            async with check_session.begin():
+                task = await check_session.get(Task, task_id)
+                if not task:
+                    await message.answer("❌ Задание не найдено")
+                    return await state.clear()
+
+                # 4. Вызываем оригинальную check_answer
+                is_correct = await check_answer(
+                    message=message,
+                    task_id=task.id,
+                    user_answer=message.text
+                )
+
+        # 5. Обновляем статистику в НОВОЙ сессии
+        # async with AsyncSessionLocal() as stats_session:
+        #     async with stats_session.begin():
+        #         await update_user_stats_simple(
+        #             session=stats_session,
+        #             user_id=message.from_user.id,
+        #             is_correct=is_correct
+        #         )
+
+        # 6. Обновляем состояние
+        await state.set_state(TaskStates.SHOWING_RESULT)
+
+    except Exception as e:
+        logger.error(f"Ошибка обработки: {str(e)}", exc_info=True)
+        await message.answer("⚠️ Ошибка при проверке ответа")
+        await state.clear()

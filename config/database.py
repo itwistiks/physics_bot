@@ -24,10 +24,22 @@ def get_db():
 
 
 DB_URL = f"mysql+asyncmy://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}"
-engine = create_async_engine(DB_URL, echo=True)  # echo=True для логов SQL
+engine = create_async_engine(
+    DB_URL,
+    echo=True,
+    pool_pre_ping=True,  # Проверка соединений перед использованием
+    pool_size=5,
+    max_overflow=10,
+    pool_recycle=3600
+)  # echo=True для логов SQL
+
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
-    expire_on_commit=False
+    expire_on_commit=False,
+    autoflush=False,
+    autocommit=False,
+    future=True
 )
+
 Base = declarative_base()

@@ -1,9 +1,20 @@
-from core.filters.admin import IsAdminFilter
 from aiogram import Router, types
 from aiogram.filters import Command
-from sqlalchemy import select
-from core.database.models import User, UserStat, Topic
-from core.database.models import UserProgress, UserAchievement, Achievement
+from aiogram.types import Message
+
+from sqlalchemy import select, func
+
+from core.filters.admin import IsAdminFilter
+from core.database.models import (
+    User,
+    UserStat,
+    Topic,
+    Task,
+    UserProgress,
+    UserAchievement,
+    Achievement
+)
+
 from config.database import AsyncSessionLocal
 
 
@@ -93,3 +104,15 @@ async def cmd_show_stats(message: types.Message):
             )
 
         await message.answer("\n".join(response), parse_mode="HTML")
+
+
+@router.message(Command("test_transaction"))
+async def test_transaction(message: Message):
+    """Тест транзакций"""
+    try:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                count = await session.scalar(select(func.count(Task.id)))
+                await message.answer(f"Всего задач: {count}")
+    except Exception as e:
+        await message.answer(f"Ошибка: {str(e)}")

@@ -14,7 +14,7 @@ def part_one_types_kb():
 def answer_options_kb(options: list, task_id: int):
     builder = InlineKeyboardBuilder()
     for i, option in enumerate(options):
-        builder.button(text=f"{chr(65+i)}. {option}",
+        builder.button(text=f"{option}",
                        callback_data=f"answer:{task_id}:{i}")
     builder.adjust(1)
     return builder.as_markup()
@@ -24,15 +24,4 @@ def theory_solution_kb(task_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="📚 Теория", callback_data=f"theory:{task_id}")
     builder.button(text="📝 Разбор", callback_data=f"solution:{task_id}")
-    return builder.as_markup()
-
-
-def new_task_kb(task_type: int | None = None):
-    builder = InlineKeyboardBuilder()
-    if task_type:
-        builder.button(text="🔄 Новое задание",
-                       callback_data=f"part_one:{task_type}")
-    else:
-        builder.button(text="🔄 Новое задание", callback_data="random_task")
-    builder.button(text="🔙 К выбору типа", callback_data="back_to_types")
     return builder.as_markup()

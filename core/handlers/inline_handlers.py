@@ -24,6 +24,13 @@ from ..keyboards.reply import (
 
 from core.services.task_display import display_task, display_task_by_id
 from core.services.task_utils import get_shuffled_task_ids
+# from core.services.answer_processing import process_answer
+from core.services.answer_checker import check_answer
+
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 router = Router()
@@ -78,28 +85,72 @@ async def show_random_task(message: Message, task_type: int, state: FSMContext):
         print(f"Ошибка: {e}")
 
 
-@router.callback_query(F.data.startswith("answer:"), StateFilter(TaskStates.WAITING_ANSWER))
-async def handle_answer(callback: CallbackQuery, state: FSMContext):
-    _, task_id, answer_idx = callback.data.split(":")
-    answer_idx = int(answer_idx)
+@router.callback_query(F.data.startswith("answer:"))
+async def handle_button_answer(callback: CallbackQuery):
+    try:
+        _, task_id, answer_idx = callback.data.split(":")
+        task = None
 
-    async with AsyncSessionLocal() as session:
-        task = await session.get(Task, int(task_id))
+        # Основная логика в отдельной функции
+        async with AsyncSessionLocal() as session:
+            task = await session.get(Task, int(task_id))
+
         if not task:
             await callback.answer("Задание не найдено", show_alert=True)
             return
 
-        # Проверяем ответ
-        is_correct = (task.answer_options[answer_idx] == task.correct_answer)
-
-        await callback.answer(
-            "✅ Правильно!" if is_correct else "❌ Неверно!"
+        await check_answer(
+            message=callback.message,
+            task_id=task.id,
+            user_answer=task.answer_options[int(answer_idx)],
+            callback=callback
         )
 
-        # Показываем правильный ответ
-        await callback.message.answer(
-            f"Правильный ответ: {task.correct_answer}",
-            reply_markup=theory_solution_kb(task.id)
-        )
+    except Exception as e:
+        logger.error(f"Button handler error: {e}")
+        await callback.answer("Ошибка обработки", show_alert=True)
 
-    await state.set_state(TaskStates.SHOWING_RESULT)
+
+# -------------| Обработчики inline-кнопок после задачи |------------- #
+
+
+# Обработчик теории
+
+
+@router.callback_query(F.data.startswith("theory:"))
+async def show_theory(callback: CallbackQuery):
+    task_id = int(callback.data.split(":")[1])
+
+    async with AsyncSessionLocal() as session:
+        # Загружаем задание вместе с теорией за один запрос
+        stmt = select(Task).where(Task.id == task_id).options(
+            selectinload(Task.theory))
+        task = (await session.execute(stmt)).scalar_one_or_none()
+
+        if not task:
+            await callback.message.answer("⚠️ Задание не найдено")
+            await callback.answer()
+            return
+
+        if task.theory:
+            await callback.message.answer(
+                f"📚 Теория по заданию {task.type_number}:\n\n{task.theory.content}",
+                parse_mode="HTML"
+            )
+        else:
+            await callback.message.answer(
+                f"⚠️ Для задания {task.type_number} теория не найдена\n"
+                f"ID задания: {task.id}, Theory ID: {task.theory_id}"
+            )
+
+    await callback.answer()
+
+
+# Обработчик разбора
+
+
+@router.callback_query(F.data.startswith("solution:"))
+async def handle_solution(callback: CallbackQuery):
+    task_id = int(callback.data.split(":")[1])
+    # Здесь должна быть логика показа разбора
+    await callback.answer("Разбор будет здесь позже")
