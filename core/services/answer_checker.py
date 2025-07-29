@@ -55,13 +55,13 @@ async def check_answer(
             )
             await callback.message.answer(
                 result_text,
-                reply_markup=theory_solution_kb(task.id)
+                reply_markup=theory_solution_kb(task.id, task.complexity.value)
             )
         elif message:
             # Для текстовых ответов
             await message.answer(
                 result_text,
-                reply_markup=theory_solution_kb(task.id)
+                reply_markup=theory_solution_kb(task.id, task.complexity.value)
             )
 
         # Обновляем состояние

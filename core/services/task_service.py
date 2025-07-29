@@ -34,12 +34,6 @@ async def check_answer(callback: CallbackQuery, task_id: int, answer_idx: int) -
             show_alert=True
         )
 
-        # Показываем правильный ответ
-        await callback.message.answer(
-            f"Правильный ответ: {task.correct_answer}",
-            reply_markup=theory_solution_kb(task.id)
-        )
-
         return is_correct
 
 

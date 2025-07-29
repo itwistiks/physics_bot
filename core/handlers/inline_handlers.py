@@ -141,7 +141,7 @@ async def handle_button_answer(callback: CallbackQuery, state: FSMContext):
         # Отправляем результат
         result_message = await callback.message.answer(
             f"{'✅ Правильно!' if is_correct else '❌ Неверно!'}",
-            reply_markup=theory_solution_kb(task.id)
+            reply_markup=theory_solution_kb(task.id, task.complexity.value)
         )
 
         # Сохраняем ID сообщения с результатом /
@@ -205,6 +205,37 @@ async def show_theory(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("solution:"))
 async def handle_solution(callback: CallbackQuery):
-    task_id = int(callback.data.split(":")[1])
-    # Здесь должна быть логика показа разбора
-    await callback.answer("Разбор будет здесь позже")
+    try:
+        task_id = int(callback.data.split(":")[1])
+
+        async with AsyncSessionLocal() as session:
+            # Явно начинаем транзакцию
+            async with session.begin():
+                # Получаем задачу с блокировкой для чтения
+                task = await session.execute(
+                    select(Task)
+                    .where(Task.id == task_id)
+                    .with_for_update(read=True)
+                )
+                task = task.scalar_one_or_none()
+
+                if not task:
+                    await callback.answer("⚠️ Задача не найдена", show_alert=True)
+                    return
+
+                if not task.video_analysis_url:
+                    await callback.answer("⚠️ Видеоразбор отсутствует", show_alert=True)
+                    return
+
+                # Отправляем сообщение с видеоразбором
+                await callback.message.answer(
+                    f"🎥 Видеоразбор к задаче {task.type_number}:\n"
+                    f"{task.video_analysis_url}"
+                )
+
+        # Убираем уведомление "загрузка" у кнопки
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка в handle_solution: {e}", exc_info=True)
+        await callback.answer("⚠️ Ошибка загрузки видеоразбора", show_alert=True)

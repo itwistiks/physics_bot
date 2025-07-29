@@ -1,9 +1,10 @@
+from core.database.models import Complexity  # Импортируем enum сложности
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardMarkup
 
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 from config.database import AsyncSessionLocal
-from core.database.models import Task, PartNumber
+from core.database.models import Task, PartNumber, Complexity
 
 
 def answer_options_kb(options: list, task_id: int):
@@ -15,10 +16,19 @@ def answer_options_kb(options: list, task_id: int):
     return builder.as_markup()
 
 
-def theory_solution_kb(task_id: int):
+def theory_solution_kb(task_id: int, complexity: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+
+    # Кнопка "Теория" (всегда есть)
     builder.button(text="📚 Теория", callback_data=f"theory:{task_id}")
-    builder.button(text="📝 Разбор", callback_data=f"solution:{task_id}")
+
+    # Кнопка "Разбор" (только для HIGH сложности)
+    if complexity == Complexity.HIGH.value:  # Проверяем, что сложность = 'high'
+        builder.button(text="📝 Разбор", callback_data=f"solution:{task_id}")
+
+    # Располагаем кнопки вертикально (одна под другой)
+    builder.adjust(1)
+
     return builder.as_markup()
 
 
