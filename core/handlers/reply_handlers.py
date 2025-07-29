@@ -22,6 +22,7 @@ from core.keyboards.reply import (
 )
 from core.keyboards.inline import (
     part_one_types_kb,
+    part_two_types_kb,
     answer_options_kb,
     theory_solution_kb
 )
@@ -298,20 +299,21 @@ async def random_tasks(message: Message, state: FSMContext):
 
 @router.message(Text("📋 Первая часть"))
 async def show_part_one_menu(message: Message):
+    kb = await part_one_types_kb()
     await message.answer(
         "Выберите тип задания первой части:",
-        reply_markup=part_one_types_kb()
+        reply_markup=kb
     )
-
 
 # Обработчик кнопки "Вторая часть"
 
 
 @router.message(Text("📘 Вторая часть"))
-async def part_two(message: types.Message):
+async def show_part_one_menu(message: Message):
+    kb = await part_two_types_kb()
     await message.answer(
-        "Раздел в разработке 🛠",
-        reply_markup=tasks_menu_kb()
+        "Выберите тип задания второй части:",
+        reply_markup=kb
     )
 
 
