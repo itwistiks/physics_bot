@@ -1,3 +1,4 @@
+# Пока в обдумывании
 # from aiogram.types import Message
 # from aiogram.fsm.context import FSMContext
 # from aiogram.types import Message, CallbackQuery

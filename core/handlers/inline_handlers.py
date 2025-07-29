@@ -86,29 +86,70 @@ async def show_random_task(message: Message, task_type: int, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("answer:"))
-async def handle_button_answer(callback: CallbackQuery):
+async def handle_button_answer(callback: CallbackQuery, state: FSMContext):
     try:
-        _, task_id, answer_idx = callback.data.split(":")
-        task = None
-
-        # Основная логика в отдельной функции
-        async with AsyncSessionLocal() as session:
-            task = await session.get(Task, int(task_id))
-
-        if not task:
-            await callback.answer("Задание не найдено", show_alert=True)
+        # Проверяем текущее состояние пользователя
+        current_state = await state.get_state()
+        if current_state != TaskStates.WAITING_ANSWER.state:
+            await callback.answer("Это задание уже проверено", show_alert=True)
             return
 
-        await check_answer(
-            message=callback.message,
-            task_id=task.id,
-            user_answer=task.answer_options[int(answer_idx)],
-            callback=callback
+        # Разбираем данные callback
+        _, task_id, answer_idx = callback.data.split(":")
+        task_id = int(task_id)
+        answer_idx = int(answer_idx)
+
+        # Сразу отвечаем на callback, чтобы убрать анимацию
+        await callback.answer()
+
+        async with AsyncSessionLocal() as session:
+            # Начинаем транзакцию
+            async with session.begin():
+                # Получаем задание с блокировкой FOR UPDATE
+                task = await session.execute(
+                    select(Task)
+                    .where(Task.id == task_id)
+                    .with_for_update()
+                )
+                task = task.scalar_one_or_none()
+
+                if not task:
+                    await callback.message.answer("Задание не найдено")
+                    return
+
+                # Проверяем ответ
+                user_answer = task.answer_options[answer_idx]
+                is_correct = str(user_answer).strip().lower() == str(
+                    task.correct_answer).strip().lower()
+
+                # Обновляем состояние
+                await state.set_state(TaskStates.SHOWING_RESULT)
+
+                # Обновляем статистику
+                # await update_user_stats(
+                #     session=session,
+                #     user_id=callback.from_user.id,
+                #     task_id=task.id,
+                #     is_correct=is_correct
+                # )
+
+        # Редактируем исходное сообщение с заданием
+        # await callback.message.edit_reply_markup(
+        #     reply_markup=None  # Убираем кнопки ответов
+        # )
+
+        # Отправляем результат
+        result_message = await callback.message.answer(
+            f"{'✅ Правильно!' if is_correct else '❌ Неверно!'}",
+            reply_markup=theory_solution_kb(task.id)
         )
 
+        # Сохраняем ID сообщения с результатом /
+        # await state.update_data(result_message_id=result_message.message_id)
+
     except Exception as e:
-        logger.error(f"Button handler error: {e}")
-        await callback.answer("Ошибка обработки", show_alert=True)
+        logger.error(f"Error in handle_button_answer: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка при проверке ответа", show_alert=True)
 
 
 # -------------| Обработчики inline-кнопок после задачи |------------- #

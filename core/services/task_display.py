@@ -64,12 +64,15 @@ async def display_task(message: Message, task: Task, state: FSMContext):
 
 
 async def display_task_by_id(message: Message, task_id: int, state: FSMContext):
-    """Новая версия с защитой от неявных ROLLBACK"""
+    """Отображает задание с проверкой состояния"""
     try:
-        logger.info(f"Starting task display for ID: {task_id}")
+        # Проверяем, не находится ли пользователь уже в процессе решения
+        current_state = await state.get_state()
+        if current_state == TaskStates.WAITING_ANSWER.state:
+            await message.answer("Пожалуйста, завершите текущее задание перед началом нового")
+            return
 
         async with AsyncSessionLocal() as session:
-            # Явно контролируем транзакцию
             async with session.begin():
                 task = await session.get(
                     Task,
@@ -81,17 +84,14 @@ async def display_task_by_id(message: Message, task_id: int, state: FSMContext):
                 )
 
                 if not task:
-                    logger.error(f"Task {task_id} not found")
                     await message.answer("Задание не найдено")
                     return
 
-                # Явно фиксируем перед отображением
-                await session.commit()
-
-        # Отображение вне сессии
+        # Устанавливаем состояние перед отображением задания
+        await state.set_state(TaskStates.WAITING_ANSWER)
         await display_task(message, task, state)
 
     except Exception as e:
-        logger.error(
-            f"Critical error in display_task_by_id: {e}", exc_info=True)
+        logger.error(f"Error in display_task_by_id: {e}", exc_info=True)
         await message.answer("Ошибка при загрузке задания")
+        await state.clear()

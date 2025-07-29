@@ -14,80 +14,67 @@ async def update_user_stats(
     user_id: int,
     task_id: int,
     is_correct: bool
-):
-    """Обновление статистики с гарантированным коммитом"""
+) -> bool:
+    """Атомарное обновление статистики пользователя с блокировкой"""
     try:
+        # Получаем задание для определения подтемы
         task = await session.get(Task, task_id)
         if not task:
             return False
 
-        # Получаем или создаем статистику
-        user_stat = await session.get(UserStat, user_id)
+        # Получаем статистику пользователя с блокировкой
+        user_stat = await session.execute(
+            select(UserStat)
+            .where(UserStat.user_id == user_id)
+            .with_for_update()
+        )
+        user_stat = user_stat.scalar_one_or_none()
+
         if not user_stat:
             user_stat = UserStat(user_id=user_id)
             session.add(user_stat)
 
-        # Обновляем статистику
+        # Получаем прогресс пользователя с блокировкой
+        user_progress = await session.execute(
+            select(UserProgress)
+            .where(UserProgress.user_id == user_id)
+            .with_for_update()
+        )
+        user_progress = user_progress.scalar_one_or_none()
+
+        if not user_progress:
+            user_progress = UserProgress(user_id=user_id)
+            session.add(user_progress)
+
+        # Обновляем общую статистику
         user_stat.total_attempts += 1
         if is_correct:
             user_stat.correct_answers += 1
-        user_stat.percentage = (
-            user_stat.correct_answers / user_stat.total_attempts) * 100
+        user_stat.percentage = calculate_percentage(user_stat)
 
-        # Обновляем подтему (если есть)
+        # Обновляем статистику по подтеме (если есть)
         if task.subtopic_id:
-            subtopic_key = str(task.subtopic_id)
-            if subtopic_key not in user_stat.subtopics_stats:
-                user_stat.subtopics_stats[subtopic_key] = {
-                    "correct": 0, "wrong": 0}
-
-            if is_correct:
-                user_stat.subtopics_stats[subtopic_key]["correct"] += 1
-            else:
-                user_stat.subtopics_stats[subtopic_key]["wrong"] += 1
-
-            flag_modified(user_stat, "subtopics_stats")
-
-        # Явный flush, но не коммит (коммит будет в основном обработчике)
-        await session.flush()
-        return True
-
-    except Exception as e:
-        logger.error(f"Ошибка обновления статистики: {str(e)}")
-        await session.rollback()
-        return False
+            update_subtopic_stats(user_stat, task.subtopic_id, is_correct)
 
         # Обновляем прогресс
-        points = 2 if is_correct else 1
-        user_progress.total_points = (user_progress.total_points or 0) + points
-        user_progress.weekly_points = (
-            user_progress.weekly_points or 0) + points
-        user_progress.daily_record = (user_progress.daily_record or 0) + 1
+        update_progress(user_progress, is_correct)
 
-        # Обновляем статистику по подтеме
-        task = await session.get(Task, task_id)
-        if task and task.subtopic_id:
-            subtopic_key = str(task.subtopic_id)
-            if not user_stat.subtopics_stats:
-                user_stat.subtopics_stats = {}
-            if subtopic_key not in user_stat.subtopics_stats:
-                user_stat.subtopics_stats[subtopic_key] = {
-                    "correct": 0, "wrong": 0}
+        # Обновляем дату последней активности
+        user_progress.last_active_day = datetime.utcnow().date()
 
-            if is_correct:
-                user_stat.subtopics_stats[subtopic_key]["correct"] += 1
-            else:
-                user_stat.subtopics_stats[subtopic_key]["wrong"] += 1
-
-            flag_modified(user_stat, "subtopics_stats")
+        # Проверяем и обновляем серию дней
+        if user_progress.last_active_day == datetime.utcnow().date() - timedelta(days=1):
+            user_progress.current_streak += 1
+        else:
+            user_progress.current_streak = 1
 
         await session.commit()
         return True
 
     except Exception as e:
         await session.rollback()
-        logger.error(f"Error updating stats: {e}")
-        raise
+        logger.error(f"Error updating stats: {e}", exc_info=True)
+        return False
 
 
 def calculate_percentage(user_stat: UserStat) -> float:

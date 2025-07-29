@@ -379,42 +379,22 @@ async def next_task(message: Message, state: FSMContext):
 
 # Обработчик текста
 
-# Настройка логгера
 @router.message(F.text, StateFilter(TaskStates.WAITING_ANSWER))
 async def handle_text_answer(message: Message, state: FSMContext):
     """Обработчик текстовых ответов с сохранением check_answer()"""
     try:
-        # 1. Получаем данные из состояния
         data = await state.get_data()
         task_id = data['current_task_id']
 
-        # 2. Создаем отдельную сессию для check_answer
-        async with AsyncSessionLocal() as check_session:
-            # 3. Получаем задание в отдельной транзакции
-            async with check_session.begin():
-                task = await check_session.get(Task, task_id)
-                if not task:
-                    await message.answer("❌ Задание не найдено")
-                    return await state.clear()
-
-                # 4. Вызываем оригинальную check_answer
-                is_correct = await check_answer(
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await check_answer(
+                    session=session,
                     message=message,
-                    task_id=task.id,
-                    user_answer=message.text
+                    task_id=task_id,
+                    user_answer=message.text,
+                    state=state
                 )
-
-        # 5. Обновляем статистику в НОВОЙ сессии
-        # async with AsyncSessionLocal() as stats_session:
-        #     async with stats_session.begin():
-        #         await update_user_stats_simple(
-        #             session=stats_session,
-        #             user_id=message.from_user.id,
-        #             is_correct=is_correct
-        #         )
-
-        # 6. Обновляем состояние
-        await state.set_state(TaskStates.SHOWING_RESULT)
 
     except Exception as e:
         logger.error(f"Ошибка обработки: {str(e)}", exc_info=True)
