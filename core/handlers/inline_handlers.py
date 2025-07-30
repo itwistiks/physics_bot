@@ -1,4 +1,4 @@
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, InputMediaPhoto
 from aiogram.filters import Text, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -27,6 +27,8 @@ from core.services.task_utils import get_shuffled_task_ids
 # from core.services.answer_processing import process_answer
 from core.services.answer_checker import check_answer
 
+from core.utils.debounce import throttle
+
 import logging
 
 
@@ -44,40 +46,65 @@ class TaskStates(StatesGroup):
 
 
 @router.callback_query(F.data.startswith("part_one:"))
-async def handle_task_type(callback: CallbackQuery, state: FSMContext):
-    task_type = int(callback.data.split(":")[1])
-
-    # Получаем перемешанные ID заданий указанного типа и первой части
-    async with AsyncSessionLocal() as session:
-        stmt = select(Task.id).where(
-            and_(
-                Task.type_number == task_type,
-                Task.part_number == PartNumber.PART_ONE
+@throttle(2.0)
+async def handle_task_type(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    try:
+        # Удаляем сообщение с кнопками выбора типа
+        try:
+            await bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id
             )
+        except Exception as e:
+            logger.warning(f"Could not delete message: {e}")
+
+        task_type = int(callback.data.split(":")[1])
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(Task.id).where(
+                and_(
+                    Task.type_number == task_type,
+                    Task.part_number == PartNumber.PART_ONE
+                )
+            )
+            result = await session.execute(stmt)
+            task_ids = [row[0] for row in result.all()]
+
+        if not task_ids:
+            await callback.answer("Задания этого типа не найдены", show_alert=True)
+            return
+
+        random.shuffle(task_ids)
+
+        await state.update_data(
+            TASK_LIST=task_ids,
+            CURRENT_INDEX=0,
+            IS_RANDOM_SESSION=False,
+            CURRENT_TASK_TYPE=task_type,
+            CURRENT_PART=PartNumber.PART_ONE
         )
-        result = await session.execute(stmt)
-        task_ids = [row[0] for row in result.all()]
 
-    if not task_ids:
-        await callback.answer("Задания этого типа не найдены", show_alert=True)
-        return
+        await display_task_by_id(callback.message, task_ids[0], state)
+        await callback.answer()
 
-    await state.update_data(
-        TASK_LIST=task_ids,
-        CURRENT_INDEX=0,
-        IS_RANDOM_SESSION=False,  # Флаг, что это сессия по типу
-        CURRENT_TASK_TYPE=task_type,
-        CURRENT_PART=PartNumber.PART_ONE
-    )
-
-    # Отображаем первое задание
-    await display_task_by_id(callback.message, task_ids[0], state)
-    await callback.answer()
+    except Exception as e:
+        logger.error(f"Error in handle_part_two_task_type: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка при загрузке заданий", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("part_two:"))
-async def handle_part_two_task_type(callback: CallbackQuery, state: FSMContext):
+@throttle(2.0)
+async def handle_part_two_task_type(callback: CallbackQuery, state: FSMContext, bot: Bot):
     try:
+        # Удаляем сообщение с кнопками выбора типа
+        try:
+            await bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id
+            )
+        except Exception as e:
+            logger.warning(f"Could not delete message: {e}")
+
         task_type = int(callback.data.split(":")[1])
 
         async with AsyncSessionLocal() as session:
@@ -134,8 +161,18 @@ async def show_random_task(message: Message, task_type: int, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("subtopic:"))
-async def handle_subtopic_selection(callback: CallbackQuery, state: FSMContext):
+@throttle(2.0)
+async def handle_subtopic_selection(callback: CallbackQuery, state: FSMContext, bot: Bot):
     try:
+        # Удаляем сообщение с кнопками выбора типа
+        try:
+            await bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id
+            )
+        except Exception as e:
+            logger.warning(f"Could not delete message: {e}")
+
         subtopic_id = int(callback.data.split(":")[1])
 
         # Получаем все задания для выбранной подтемы
@@ -170,8 +207,18 @@ async def handle_subtopic_selection(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("difficult_subtopic:"))
-async def handle_difficult_subtopic_selection(callback: CallbackQuery, state: FSMContext):
+@throttle(2.0)
+async def handle_difficult_subtopic_selection(callback: CallbackQuery, state: FSMContext, bot: Bot):
     try:
+        # Удаляем сообщение с кнопками выбора типа
+        try:
+            await bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id
+            )
+        except Exception as e:
+            logger.warning(f"Could not delete message: {e}")
+
         subtopic_id = int(callback.data.split(":")[1])
 
         # Получаем только сложные задания для выбранной подтемы

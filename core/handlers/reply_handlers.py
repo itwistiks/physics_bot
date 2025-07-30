@@ -47,6 +47,8 @@ from core.services.task_utils import get_random_task
 from core.services.answer_checker import check_answer
 from core.services.stats_service import update_user_stats
 
+from core.utils.debounce import throttle
+
 import logging
 
 
@@ -65,7 +67,21 @@ router = Router()
 
 
 @router.message(Text("✏️ Практика"))
-async def practice_menu(message: types.Message):
+async def practice_menu(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     await message.answer(
         "Выберите тип практики",
         reply_markup=practice_menu_kb()
@@ -76,7 +92,21 @@ async def practice_menu(message: types.Message):
 
 
 @router.message(Text("📊 Статистика"))
-async def show_stats(message: types.Message):
+async def show_stats(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     # Здесь будет логика получения статистики
     await message.answer(
         "Пока в разработке 🛠",
@@ -88,7 +118,21 @@ async def show_stats(message: types.Message):
 
 
 @router.message(Text("👨‍🏫 Репетитор"))
-async def tutor_redirect(message: types.Message):
+async def tutor_redirect(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     await message.answer(
         "Переход к репетитору:",
         reply_markup=types.InlineKeyboardMarkup(
@@ -106,7 +150,21 @@ async def tutor_redirect(message: types.Message):
 
 
 @router.message(Text("📚 Другие предметы"))
-async def other_subjects(message: types.Message):
+async def other_subjects(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     await message.answer(
         "Пока в разработке 🛠",
         reply_markup=main_menu_kb()
@@ -127,7 +185,22 @@ class SupportStates(StatesGroup):
 
 
 @router.message(Text("✉️ Поддержка"))
-async def support_start(message: types.Message, state: FSMContext):
+@throttle(2.0)
+async def support_start(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     user_id = message.from_user.id
 
     # Проверяем кулдаун
@@ -154,7 +227,21 @@ async def support_start(message: types.Message, state: FSMContext):
 
 
 @router.message(Text("❌ Отменить"))
-async def cancel_support(message: types.Message, state: FSMContext):
+@throttle(2.0)
+async def cancel_support(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
     await state.clear()
     await message.answer(
         "Отправка сообщения отменена",
@@ -205,7 +292,22 @@ async def handle_support_message(message: types.Message, state: FSMContext):
 
 
 @router.message(Text("📝 Задания"))
-async def tasks_menu(message: types.Message):
+@throttle(2.0)
+async def tasks_menu(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     await message.answer(
         "Выберите тип практики:",
         reply_markup=tasks_menu_kb()
@@ -216,8 +318,23 @@ async def tasks_menu(message: types.Message):
 
 
 @router.message(Text("📋 Вариант"))
-async def handle_variant(message: Message, state: FSMContext):
+@throttle(2.0)
+async def handle_variant(message: Message, state: FSMContext, bot: Bot):
     """Обработчик кнопки 'Вариант' - создает полный вариант ОГЭ"""
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     try:
         # Получаем ID заданий для варианта
         task_ids = await get_variant_task_ids()
@@ -247,51 +364,115 @@ async def handle_variant(message: Message, state: FSMContext):
 
 
 @router.message(Text("📖 Темы"))
-async def show_topics_menu(message: Message):
+@throttle(2.0)
+async def show_topics_menu(message: Message, state: FSMContext, bot: Bot):
     """Обработчик кнопки 'Темы'"""
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     kb = await topics_menu_kb()
-    await message.answer(
+    sent_message = await message.answer(
         "Выберите тему для практики:",
         reply_markup=kb
     )
+    # Сохраняем ID сообщения в состоянии
+    await state.update_data(menu_message_id=sent_message.message_id)
 
 
 # Обработчик кнопки "Сложные задачи"
 
 
 @router.message(Text("🔥 Сложные задачи"))
-async def show_difficult_topics_menu(message: Message):
+@throttle(2.0)
+async def show_difficult_topics_menu(message: Message, state: FSMContext, bot: Bot):
     """Обработчик кнопки 'Сложные задачи'"""
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     kb = await difficult_topics_menu_kb()
-    await message.answer(
+    sent_message = await message.answer(
         "Выберите тему для решения сложных задач:",
         reply_markup=kb
     )
+    # Сохраняем ID сообщения в состоянии
+    await state.update_data(menu_message_id=sent_message.message_id)
 
 
-# Обработчик кнопки "Репетитор"
+# # Обработчик кнопки "Репетитор"
 
 
-@router.message(Text("👨‍🏫 Репетитор"))
-async def tutor_redirect(message: types.Message):
-    await message.answer(
-        "Переход к репетитору:",
-        reply_markup=types.InlineKeyboardMarkup(
-            inline_keyboard=[[
-                types.InlineKeyboardButton(
-                    text="Перейти на сайт репетитора",
-                    url="https://google.com"
-                )
-            ]]
-        )
-    )
+# @router.message(Text("👨‍🏫 Репетитор"))
+# @throttle(2.0)
+# async def tutor_redirect(message: types.Message, state: FSMContext, bot: Bot):
+#     # Получаем сохраненный ID сообщения
+#     data = await state.get_data()
+#     message_id = data.get('menu_message_id')
+
+#     if message_id:
+#         try:
+#             await bot.delete_message(
+#                 chat_id=message.chat.id,
+#                 message_id=message_id
+#             )
+#         except Exception as e:
+#             # Сообщение могло быть уже удалено или не найдено
+#             logger.debug(f"Не удалось удалить сообщение: {e}")
+
+#     await message.answer(
+#         "Переход к репетитору:",
+#         reply_markup=types.InlineKeyboardMarkup(
+#             inline_keyboard=[[
+#                 types.InlineKeyboardButton(
+#                     text="Перейти на сайт репетитора",
+#                     url="https://google.com"
+#                 )
+#             ]]
+#         )
+#     )
 
 
 # Обработчик кнопки "Назад"
 
 
 @router.message(Text("✏️ Назад"))
-async def back_to_main(message: types.Message):
+@throttle(2.0)
+async def back_to_main(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     await message.answer(
         "Выберите тип практики:",
         reply_markup=main_menu_kb()
@@ -307,7 +488,22 @@ async def back_to_main(message: types.Message):
 
 
 @router.message(Text("🎲 Случайные задачи"))
-async def random_tasks(message: Message, state: FSMContext):
+@throttle(2.0)
+async def random_tasks(message: Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     # Получаем перемешанные ID заданий ВСЕХ типов
     task_ids = await get_shuffled_task_ids()
 
@@ -326,31 +522,81 @@ async def random_tasks(message: Message, state: FSMContext):
 
 # Обработчик кнопки "Первая часть"
 
+
 @router.message(Text("📋 Первая часть"))
-async def show_part_one_menu(message: Message):
+@throttle(2.0)
+async def show_part_one_menu(message: Message, bot: Bot, state: FSMContext):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     kb = await part_one_types_kb()
-    await message.answer(
+    sent_message = await message.answer(
         "Выберите тип задания первой части:",
         reply_markup=kb
     )
+    # Сохраняем ID сообщения в состоянии
+    await state.update_data(menu_message_id=sent_message.message_id)
+
 
 # Обработчик кнопки "Вторая часть"
 
 
 @router.message(Text("📘 Вторая часть"))
-async def show_part_two_menu(message: Message):
+@throttle(2.0)
+async def show_part_two_menu(message: Message, bot: Bot, state: FSMContext):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
     kb = await part_two_types_kb()
-    await message.answer(
+    sent_message = await message.answer(
         "Выберите тип задания второй части:",
         reply_markup=kb
     )
+
+    # Сохраняем ID сообщения в состоянии
+    await state.update_data(menu_message_id=sent_message.message_id)
 
 
 # Обработчик кнопки "Назад"
 
 
 @router.message(Text("📝 Назад"))
-async def back_to_practice(message: types.Message):
+async def back_to_practice(message: types.Message, bot: Bot, state: FSMContext):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
     await message.answer(
         "Выберите тип практики:",
         reply_markup=practice_menu_kb()
@@ -364,6 +610,7 @@ async def back_to_practice(message: types.Message):
 
 
 @router.message(Text("▶️ Следующее задание"))
+@throttle(2.0)
 async def next_task(message: Message, state: FSMContext, bot: Bot):  # Добавляем Bot в параметры
     try:
         # Проверяем, не находится ли пользователь уже в процессе решения
@@ -377,20 +624,30 @@ async def next_task(message: Message, state: FSMContext, bot: Bot):  # Доба�
         current_idx = data.get('CURRENT_INDEX', 0)
         task_message_id = data.get('task_message_id')
         chat_id = data.get('chat_id', message.chat.id)
+        message_id = data.get('task_message_id')
 
         print(
             f"DEBUG: Trying to delete message {task_message_id} in chat {chat_id}")
 
-        # Удаляем предыдущее сообщение
-        if task_message_id:
+        # # Удаляем предыдущее сообщение
+        # if task_message_id:
+        #     try:
+        #         await bot.delete_message(
+        #             chat_id=chat_id,
+        #             message_id=task_message_id
+        #         )
+        #         print("DEBUG: Message deleted successfully")
+        #     except Exception as e:
+        #         print(f"DEBUG: Failed to delete message: {e}")
+        if message_id:
             try:
-                await bot.delete_message(  # Используем bot из параметров
-                    chat_id=chat_id,
-                    message_id=task_message_id
+                await bot.delete_message(
+                    chat_id=message.chat.id,
+                    message_id=message_id
                 )
-                print("DEBUG: Message deleted successfully")
             except Exception as e:
-                print(f"DEBUG: Failed to delete message: {e}")
+                # Сообщение могло быть уже удалено или не найдено
+                logger.debug(f"Не удалось удалить сообщение: {e}")
 
         if not task_ids:
             await message.answer("❌ Список заданий пуст", reply_markup=practice_menu_kb())
@@ -416,6 +673,7 @@ async def next_task(message: Message, state: FSMContext, bot: Bot):  # Доба�
 
 
 @router.message(Text("⏹ Остановиться"))
+@throttle(2.0)
 async def stop_practice(message: Message, state: FSMContext, bot: Bot):  # Добавляем Bot
     data = await state.get_data()
     task_message_id = data.get('task_message_id')

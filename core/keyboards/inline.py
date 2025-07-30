@@ -1,5 +1,5 @@
-from core.database.models import Complexity  # Импортируем enum сложности
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardMarkup
 
 from sqlalchemy import select
