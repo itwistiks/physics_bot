@@ -107,7 +107,7 @@ async def cmd_users(message: types.Message):
 #         await message.answer("\n".join(response), parse_mode="HTML")
 
 
-@router.message(Command("test_transaction"))
+@router.message(Command("test_transaction"), IsAdminFilter())
 async def test_transaction(message: Message):
     """Тест транзакций"""
     try:

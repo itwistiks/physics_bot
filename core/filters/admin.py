@@ -13,5 +13,5 @@ class IsAdminFilter(BaseFilter):
                 .where(User.id == message.from_user.id)
             )
 
-            # Админами считаем пользователей со статусом TEACHER
-            return user is not None and user.status == UserStatus.TEACHER
+            # Админами считаем пользователей со статусом ADMIN или MODERATOR
+            return user is not None and (user.status == UserStatus.ADMIN or user.status == UserStatus.MODERATOR)
