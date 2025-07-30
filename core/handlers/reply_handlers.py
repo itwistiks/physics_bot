@@ -24,7 +24,9 @@ from core.keyboards.inline import (
     part_one_types_kb,
     part_two_types_kb,
     answer_options_kb,
-    theory_solution_kb
+    theory_solution_kb,
+    topics_menu_kb,
+    difficult_topics_menu_kb
 )
 
 from sqlalchemy import select
@@ -36,7 +38,10 @@ from core.database.models import Task, Theory
 from core.fsm.states import TaskStates
 
 from core.services.task_display import display_task, display_task_by_id
-from core.services.task_utils import get_shuffled_task_ids
+from core.services.task_utils import (
+    get_shuffled_task_ids,
+    get_variant_task_ids
+)
 # from core.services.answer_processing import process_answer
 from core.services.task_utils import get_random_task
 from core.services.answer_checker import check_answer
@@ -211,21 +216,43 @@ async def tasks_menu(message: types.Message):
 
 
 @router.message(Text("📋 Вариант"))
-async def other_subjects(message: types.Message):
-    await message.answer(
-        "Пока в разработке 🛠",
-        reply_markup=main_menu_kb()
-    )
+async def handle_variant(message: Message, state: FSMContext):
+    """Обработчик кнопки 'Вариант' - создает полный вариант ОГЭ"""
+    try:
+        # Получаем ID заданий для варианта
+        task_ids = await get_variant_task_ids()
+
+        if not task_ids:
+            await message.answer("❌ Не удалось создать вариант. Задания не найдены.",
+                                 reply_markup=practice_menu_kb())
+            return
+
+        await state.update_data(
+            TASK_LIST=task_ids,
+            CURRENT_INDEX=0,
+            IS_RANDOM_SESSION=False,
+            IS_VARIANT_SESSION=True  # Флаг, что это сессия варианта
+        )
+
+        # Отображаем первое задание
+        await display_task_by_id(message, task_ids[0], state)
+
+    except Exception as e:
+        logger.error(f"Error in handle_variant: {e}", exc_info=True)
+        await message.answer("⚠️ Произошла ошибка при создании варианта",
+                             reply_markup=practice_menu_kb())
 
 
 # Обработчик кнопки "Темы"
 
 
 @router.message(Text("📖 Темы"))
-async def other_subjects(message: types.Message):
+async def show_topics_menu(message: Message):
+    """Обработчик кнопки 'Темы'"""
+    kb = await topics_menu_kb()
     await message.answer(
-        "Пока в разработке 🛠",
-        reply_markup=main_menu_kb()
+        "Выберите тему для практики:",
+        reply_markup=kb
     )
 
 
@@ -233,10 +260,12 @@ async def other_subjects(message: types.Message):
 
 
 @router.message(Text("🔥 Сложные задачи"))
-async def other_subjects(message: types.Message):
+async def show_difficult_topics_menu(message: Message):
+    """Обработчик кнопки 'Сложные задачи'"""
+    kb = await difficult_topics_menu_kb()
     await message.answer(
-        "Пока в разработке 🛠",
-        reply_markup=main_menu_kb()
+        "Выберите тему для решения сложных задач:",
+        reply_markup=kb
     )
 
 
@@ -309,7 +338,7 @@ async def show_part_one_menu(message: Message):
 
 
 @router.message(Text("📘 Вторая часть"))
-async def show_part_one_menu(message: Message):
+async def show_part_two_menu(message: Message):
     kb = await part_two_types_kb()
     await message.answer(
         "Выберите тип задания второй части:",

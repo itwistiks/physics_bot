@@ -3,7 +3,7 @@ from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from core.database.models import Task
+from core.database.models import Task, Complexity
 from core.fsm.states import TaskStates
 from config.database import AsyncSessionLocal
 from ..keyboards.inline import answer_options_kb
@@ -15,14 +15,13 @@ logger = logging.getLogger(__name__)
 async def display_task(message: Message, task: Task, state: FSMContext):
     """Отображает задание с вариантами ответов"""
     try:
-        # Формируем текст задания
-        options_text = "\n".join(
-            f"{chr(65+i)}. {option}"
-            for i, option in enumerate(task.answer_options)
-        )
+        # Добавляем отметку о сложности
+        complexity_marker = ""
+        if task.complexity == Complexity.HIGH:
+            complexity_marker = "🔥 "
 
         text = (
-            f"📌 Номер задания: {task.id}\n\n"
+            f"📌 Номер задания: {task.id} {complexity_marker}\n\n"
             f"Тип задания: {task.type_number}\n\n"
             f"{task.task_content['text']}\n\n"
         )
@@ -36,7 +35,7 @@ async def display_task(message: Message, task: Task, state: FSMContext):
             try:
                 msg = await message.answer_photo(
                     photo=image_url,
-                    caption=task_text,
+                    caption=text,
                     reply_markup=answer_options_kb(
                         task.answer_options, task.id)
                 )
@@ -51,7 +50,7 @@ async def display_task(message: Message, task: Task, state: FSMContext):
         else:
             # Если нет изображения - отправляем только текст
             msg = await message.answer(
-                task_text,
+                text,
                 reply_markup=answer_options_kb(task.answer_options, task.id)
             )
 

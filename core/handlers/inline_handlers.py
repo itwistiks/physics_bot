@@ -4,12 +4,12 @@ from aiogram.filters import Text, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 import random
 
 from config.database import AsyncSessionLocal
-from core.database.models import Task, Theory
+from core.database.models import Task, Theory, PartNumber, Complexity
 from core.services.task_display import display_task
 
 from ..keyboards.inline import (
@@ -47,8 +47,16 @@ class TaskStates(StatesGroup):
 async def handle_task_type(callback: CallbackQuery, state: FSMContext):
     task_type = int(callback.data.split(":")[1])
 
-    # Получаем перемешанные ID заданий КОНКРЕТНОГО типа
-    task_ids = await get_shuffled_task_ids(task_type=task_type)
+    # Получаем перемешанные ID заданий указанного типа и первой части
+    async with AsyncSessionLocal() as session:
+        stmt = select(Task.id).where(
+            and_(
+                Task.type_number == task_type,
+                Task.part_number == PartNumber.PART_ONE
+            )
+        )
+        result = await session.execute(stmt)
+        task_ids = [row[0] for row in result.all()]
 
     if not task_ids:
         await callback.answer("Задания этого типа не найдены", show_alert=True)
@@ -57,11 +65,51 @@ async def handle_task_type(callback: CallbackQuery, state: FSMContext):
     await state.update_data(
         TASK_LIST=task_ids,
         CURRENT_INDEX=0,
-        IS_RANDOM_SESSION=False  # Флаг, что это сессия по типу
+        IS_RANDOM_SESSION=False,  # Флаг, что это сессия по типу
+        CURRENT_TASK_TYPE=task_type,
+        CURRENT_PART=PartNumber.PART_ONE
     )
 
+    # Отображаем первое задание
     await display_task_by_id(callback.message, task_ids[0], state)
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("part_two:"))
+async def handle_part_two_task_type(callback: CallbackQuery, state: FSMContext):
+    try:
+        task_type = int(callback.data.split(":")[1])
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(Task.id).where(
+                and_(
+                    Task.type_number == task_type,
+                    Task.part_number == PartNumber.PART_TWO
+                )
+            )
+            result = await session.execute(stmt)
+            task_ids = [row[0] for row in result.all()]
+
+        if not task_ids:
+            await callback.answer("Задания этого типа не найдены", show_alert=True)
+            return
+
+        random.shuffle(task_ids)
+
+        await state.update_data(
+            TASK_LIST=task_ids,
+            CURRENT_INDEX=0,
+            IS_RANDOM_SESSION=False,
+            CURRENT_TASK_TYPE=task_type,
+            CURRENT_PART=PartNumber.PART_TWO
+        )
+
+        await display_task_by_id(callback.message, task_ids[0], state)
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in handle_part_two_task_type: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка при загрузке заданий", show_alert=True)
 
 
 async def show_random_task(message: Message, task_type: int, state: FSMContext):
@@ -83,6 +131,83 @@ async def show_random_task(message: Message, task_type: int, state: FSMContext):
     except Exception as e:
         await message.answer(f"Ошибка при загрузке задания: {e}")
         print(f"Ошибка: {e}")
+
+
+@router.callback_query(F.data.startswith("subtopic:"))
+async def handle_subtopic_selection(callback: CallbackQuery, state: FSMContext):
+    try:
+        subtopic_id = int(callback.data.split(":")[1])
+
+        # Получаем все задания для выбранной подтемы
+        async with AsyncSessionLocal() as session:
+            stmt = select(Task.id).where(
+                Task.subtopic_id == subtopic_id
+            )
+            result = await session.execute(stmt)
+            task_ids = [row[0] for row in result.all()]
+
+        if not task_ids:
+            await callback.answer("Задания по этой теме не найдены", show_alert=True)
+            return
+
+        # Перемешиваем задания
+        random.shuffle(task_ids)
+
+        await state.update_data(
+            TASK_LIST=task_ids,
+            CURRENT_INDEX=0,
+            IS_RANDOM_SESSION=False,
+            CURRENT_SUBTOPIC_ID=subtopic_id
+        )
+
+        # Отображаем первое задание
+        await display_task_by_id(callback.message, task_ids[0], state)
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in handle_subtopic_selection: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка при загрузке заданий", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("difficult_subtopic:"))
+async def handle_difficult_subtopic_selection(callback: CallbackQuery, state: FSMContext):
+    try:
+        subtopic_id = int(callback.data.split(":")[1])
+
+        # Получаем только сложные задания для выбранной подтемы
+        async with AsyncSessionLocal() as session:
+            stmt = select(Task.id).where(
+                and_(
+                    Task.subtopic_id == subtopic_id,
+                    Task.complexity == Complexity.HIGH
+                )
+            )
+            result = await session.execute(stmt)
+            task_ids = [row[0] for row in result.all()]
+
+        if not task_ids:
+            await callback.answer("Сложные задания по этой теме не найдены", show_alert=True)
+            return
+
+        # Перемешиваем задания
+        random.shuffle(task_ids)
+
+        await state.update_data(
+            TASK_LIST=task_ids,
+            CURRENT_INDEX=0,
+            IS_RANDOM_SESSION=False,
+            CURRENT_SUBTOPIC_ID=subtopic_id,
+            IS_DIFFICULT_SESSION=True  # Флаг сложной сессии
+        )
+
+        # Отображаем первое задание
+        await display_task_by_id(callback.message, task_ids[0], state)
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(
+            f"Error in handle_difficult_subtopic_selection: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка при загрузке сложных заданий", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("answer:"))

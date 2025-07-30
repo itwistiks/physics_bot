@@ -4,7 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardMarkup
 
 from sqlalchemy import select
 from config.database import AsyncSessionLocal
-from core.database.models import Task, PartNumber, Complexity
+from core.database.models import Task, PartNumber, Complexity, Subtopic
 
 
 def answer_options_kb(options: list, task_id: int):
@@ -85,10 +85,53 @@ async def part_two_types_kb():
             for type_num in type_numbers:
                 builder.button(
                     text=str(type_num),
-                    callback_data=f"part_one:{type_num}"
+                    callback_data=f"part_two:{type_num}"
                 )
 
             # Настраиваем количество кнопок в ряду (например, по 2)
             builder.adjust(2)
 
             return builder.as_markup()
+
+
+async def topics_menu_kb():
+    """Создает клавиатуру с подтемами (на русском)"""
+    builder = InlineKeyboardBuilder()
+
+    async with AsyncSessionLocal() as session:
+        # Получаем все подтемы с русскими названиями
+        stmt = select(Subtopic).order_by(Subtopic.id)
+        subtopics = (await session.execute(stmt)).scalars().all()
+
+        for subtopic in subtopics:
+            if subtopic.title_ru:  # Только подтемы с русскими названиями
+                builder.button(
+                    text=subtopic.title_ru,
+                    callback_data=f"subtopic:{subtopic.id}"
+                )
+
+        builder.adjust(2)  # 2 кнопки в ряд
+        return builder.as_markup()
+
+
+async def difficult_topics_menu_kb():
+    """Создает клавиатуру с подтемами, где есть сложные задания"""
+    builder = InlineKeyboardBuilder()
+
+    async with AsyncSessionLocal() as session:
+        # Получаем подтемы, где есть задания высокой сложности
+        stmt = select(Subtopic).join(Task).where(
+            Task.complexity == Complexity.HIGH
+        ).distinct().order_by(Subtopic.id)
+
+        subtopics = (await session.execute(stmt)).scalars().all()
+
+        for subtopic in subtopics:
+            if subtopic.title_ru:  # Только подтемы с русскими названиями
+                builder.button(
+                    text=subtopic.title_ru,
+                    callback_data=f"difficult_subtopic:{subtopic.id}"
+                )
+
+        builder.adjust(2)  # 2 кнопки в ряд
+        return builder.as_markup()
