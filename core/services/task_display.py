@@ -27,16 +27,31 @@ async def display_task(message: Message, task: Task, state: FSMContext):
             f"{task.task_content['text']}\n\n"
         )
 
-        # Отправляем задание с фото или без
-        if task.task_content.get('image'):
-            msg = await message.answer_photo(
-                photo=task.task_content['image'],
-                caption=text,
-                reply_markup=answer_options_kb(task.answer_options, task.id)
-            )
+        # Проверяем наличие изображения
+        image_url = task.task_content.get('image')
+        task_text = task.task_content.get('text', 'Текст задания отсутствует')
+
+        if image_url:
+            # Если есть изображение - отправляем фото с подписью
+            try:
+                msg = await message.answer_photo(
+                    photo=image_url,
+                    caption=task_text,
+                    reply_markup=answer_options_kb(
+                        task.answer_options, task.id)
+                )
+            except Exception as e:
+                logger.error(f"Error sending photo: {e}")
+                # Если не удалось отправить фото, отправляем просто текст
+                msg = await message.answer(
+                    task_text + "\n\n⚠️ Не удалось загрузить изображение",
+                    reply_markup=answer_options_kb(
+                        task.answer_options, task.id)
+                )
         else:
+            # Если нет изображения - отправляем только текст
             msg = await message.answer(
-                text,
+                task_text,
                 reply_markup=answer_options_kb(task.answer_options, task.id)
             )
 
@@ -61,7 +76,7 @@ async def display_task(message: Message, task: Task, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Error displaying task: {str(e)}")
-        await message.answer("Произошла ошибка при отображении задания")
+        await message.answer(f"Произошла ошибка при отображении задания {task.id}")
 
 
 async def display_task_by_id(message: Message, task_id: int, state: FSMContext):
