@@ -82,12 +82,6 @@ async def display_task(message: Message, task: Task, state: FSMContext):
 async def display_task_by_id(message: Message, task_id: int, state: FSMContext):
     """Отображает задание с проверкой состояния"""
     try:
-        # Проверяем, не находится ли пользователь уже в процессе решения
-        # current_state = await state.get_state()
-        # if current_state == TaskStates.WAITING_ANSWER.state:
-        #     await message.answer("Пожалуйста, завершите текущее задание перед началом нового")
-        #     return
-
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 task = await session.get(

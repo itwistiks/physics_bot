@@ -94,6 +94,13 @@ async def handle_button_answer(callback: CallbackQuery, state: FSMContext):
             await callback.answer("Это задание уже проверено", show_alert=True)
             return
 
+        # Проверяем, не устарел ли callback
+        try:
+            await callback.answer()  # Быстрый ответ, чтобы избежать ошибки "query is too old"
+        except Exception as e:
+            logger.warning(f"Callback answer error (likely expired): {e}")
+            return  # Просто выходим, если callback устарел
+
         # Разбираем данные callback
         _, task_id, answer_idx = callback.data.split(":")
         task_id = int(task_id)

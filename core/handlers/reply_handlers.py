@@ -337,6 +337,12 @@ async def back_to_practice(message: types.Message):
 @router.message(Text("▶️ Следующее задание"))
 async def next_task(message: Message, state: FSMContext, bot: Bot):  # Добавляем Bot в параметры
     try:
+        # Проверяем, не находится ли пользователь уже в процессе решения
+        current_state = await state.get_state()
+        if current_state == TaskStates.WAITING_ANSWER.state:
+            await message.answer("Пожалуйста, ответьте на текущее задание перед переходом к следующему")
+            return
+
         data = await state.get_data()
         task_ids = data.get('TASK_LIST', [])
         current_idx = data.get('CURRENT_INDEX', 0)
