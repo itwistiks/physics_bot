@@ -24,7 +24,7 @@ def theory_solution_kb(task_id: int, complexity: str) -> InlineKeyboardMarkup:
 
     # Кнопка "Разбор" (только для HIGH сложности)
     if complexity == Complexity.HIGH.value:  # Проверяем, что сложность = 'high'
-        builder.button(text="📝 Разбор", callback_data=f"solution:{task_id}")
+        builder.button(text="🎥 Разбор", callback_data=f"solution:{task_id}")
 
     # Располагаем кнопки вертикально (одна под другой)
     builder.adjust(1)

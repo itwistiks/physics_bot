@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import aiohttp
 
 from aiogram.fsm.state import State, StatesGroup, default_state
-from aiogram.fsm.context import FSMContext
+from aiogram.fsm.context import FSMContext, Bot
 from aiogram.filters import or_f, StateFilter
 from aiogram import Router, types, F
 from aiogram.filters import Text
@@ -331,40 +331,42 @@ async def back_to_practice(message: types.Message):
 # -------------| Обработчики reply-кнопок задачи |------------- #
 
 
-# Обработчик остановки практики
-
-
-@router.message(Text("⏹ Остановиться"))
-async def stop_practice(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer(
-        "Практика завершена",
-        reply_markup=practice_menu_kb()
-    )
-
-
 # Обработчик следующего задания
 
 
 @router.message(Text("▶️ Следующее задание"))
-async def next_task(message: Message, state: FSMContext):
+async def next_task(message: Message, state: FSMContext, bot: Bot):  # Добавляем Bot в параметры
     try:
         data = await state.get_data()
         task_ids = data.get('TASK_LIST', [])
         current_idx = data.get('CURRENT_INDEX', 0)
+        task_message_id = data.get('task_message_id')
+        chat_id = data.get('chat_id', message.chat.id)
+
+        print(
+            f"DEBUG: Trying to delete message {task_message_id} in chat {chat_id}")
+
+        # Удаляем предыдущее сообщение
+        if task_message_id:
+            try:
+                await bot.delete_message(  # Используем bot из параметров
+                    chat_id=chat_id,
+                    message_id=task_message_id
+                )
+                print("DEBUG: Message deleted successfully")
+            except Exception as e:
+                print(f"DEBUG: Failed to delete message: {e}")
 
         if not task_ids:
             await message.answer("❌ Список заданий пуст", reply_markup=practice_menu_kb())
             await state.clear()
             return
 
-        # Проверяем, не закончились ли задания
         if current_idx + 1 >= len(task_ids):
             await message.answer("🎉 Вы завершили все задания в этой сессии!", reply_markup=practice_menu_kb())
             await state.clear()
             return
 
-        # Показываем следующее задание
         next_idx = current_idx + 1
         await display_task_by_id(message, task_ids[next_idx], state)
         await state.update_data(CURRENT_INDEX=next_idx)
@@ -373,6 +375,33 @@ async def next_task(message: Message, state: FSMContext):
         logger.error(f"Error in next_task: {e}", exc_info=True)
         await message.answer("⚠️ Ошибка загрузки следующего задания", reply_markup=practice_menu_kb())
         await state.clear()
+
+
+# Обработчик остановки практики
+
+
+@router.message(Text("⏹ Остановиться"))
+async def stop_practice(message: Message, state: FSMContext, bot: Bot):  # Добавляем Bot
+    data = await state.get_data()
+    task_message_id = data.get('task_message_id')
+    chat_id = data.get('chat_id', message.chat.id)
+
+    if task_message_id:
+        try:
+            await bot.delete_message(  # Используем bot из параметров
+                chat_id=chat_id,
+                message_id=task_message_id
+            )
+        except Exception as e:
+            logger.warning(f"Could not delete message: {e}")
+
+    # Очищаем текущее состояние, чтобы не ждать ответа
+    await state.clear()
+
+    await message.answer(
+        "Практика завершена",
+        reply_markup=practice_menu_kb()
+    )
 
 
 # Обработчик текста

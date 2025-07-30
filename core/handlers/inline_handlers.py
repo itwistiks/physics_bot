@@ -224,7 +224,7 @@ async def handle_solution(callback: CallbackQuery):
                     return
 
                 if not task.video_analysis_url:
-                    await callback.answer("⚠️ Видеоразбор отсутствует", show_alert=True)
+                    await callback.answer("Видеоразбор отсутствует, но мы занимаемся его созданием 🎥", show_alert=True)
                     return
 
                 # Отправляем сообщение с видеоразбором
