@@ -32,18 +32,20 @@ def upgrade():
     if fk_name:
         op.drop_constraint(fk_name, 'user_stats', type_='foreignkey')
 
+    # 2. Удаляем старый первичный ключ (если существует)
     try:
         op.drop_constraint('PRIMARY', 'user_stats', type_='primary')
     except:
         pass  # Игнорируем, если PK уже удалён
 
-    # 4. Делаем user_id первичным ключом (явно)
+    # 3. Делаем user_id первичным ключом
     op.execute("""
         ALTER TABLE user_stats 
-        MODIFY COLUMN user_id INT NOT NULL PRIMARY KEY
+        MODIFY COLUMN user_id INT NOT NULL,
+        ADD PRIMARY KEY (user_id)
     """)
 
-    # 5. Возвращаем внешний ключ с CASCADE
+    # 4. Возвращаем внешний ключ с CASCADE
     op.create_foreign_key(
         'fk_user_stats_user_id',
         'user_stats', 'users',
@@ -57,16 +59,10 @@ def downgrade():
     op.drop_constraint('fk_user_stats_user_id',
                        'user_stats', type_='foreignkey')
 
-    # 2. Убираем PK с user_id
+    # 2. Убираем PK с user_id (если нужно вернуть предыдущее состояние)
     op.execute("ALTER TABLE user_stats DROP PRIMARY KEY")
 
-    # 3. Возвращаем старый id
-    op.add_column('user_stats',
-                  sa.Column('id', sa.Integer(),
-                            autoincrement=True, primary_key=True)
-                  )
-
-    # 4. Возвращаем старый внешний ключ
+    # 3. Возвращаем старый внешний ключ (если был)
     op.create_foreign_key(
         'user_stats_ibfk_1',
         'user_stats', 'users',

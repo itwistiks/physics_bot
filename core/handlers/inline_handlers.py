@@ -15,7 +15,8 @@ from core.services.task_display import display_task
 from ..keyboards.inline import (
     part_one_types_kb,
     answer_options_kb,
-    theory_solution_kb
+    theory_solution_kb,
+    achievements_button
 )
 from ..keyboards.reply import (
     practice_menu_kb,
@@ -43,6 +44,19 @@ router = Router()
 class TaskStates(StatesGroup):
     WAITING_ANSWER = State()
     SHOWING_RESULT = State()
+
+
+@router.callback_query(F.data == "show_achievements")
+async def show_achievements_handler(callback: CallbackQuery):
+    """Обработчик кнопки просмотра достижений"""
+    try:
+        # Отвечаем всплывающим сообщением
+        await callback.answer(
+            "⏳ Система достижений пока в разработке",
+            show_alert=True
+        )
+    except Exception as e:
+        logger.error(f"Error in achievements handler: {e}")
 
 
 @router.callback_query(F.data.startswith("part_one:"))
@@ -282,49 +296,38 @@ async def handle_button_answer(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
         async with AsyncSessionLocal() as session:
-            # Начинаем транзакцию
+            # Начинаем транзакцию на уровне обработчика
             async with session.begin():
-                # Получаем задание с блокировкой FOR UPDATE
-                task = await session.execute(
-                    select(Task)
-                    .where(Task.id == task_id)
-                    .with_for_update()
-                )
-                task = task.scalar_one_or_none()
-
+                task = await session.get(Task, task_id, with_for_update=True)
                 if not task:
-                    await callback.message.answer("Задание не найдено")
+                    await callback.answer("Задание не найдено", show_alert=True)
                     return
 
                 # Проверяем ответ
-                user_answer = task.answer_options[answer_idx]
-                is_correct = str(user_answer).strip().lower() == str(
-                    task.correct_answer).strip().lower()
+                from core.services.answer_checker import check_answer
+                result = await check_answer(
+                    session=session,
+                    task_id=task_id,
+                    user_answer=task.answer_options[answer_idx],
+                    user_id=callback.from_user.id
+                )
+
+                if "error" in result:
+                    await callback.answer(result["error"], show_alert=True)
+                    return
 
                 # Обновляем состояние
                 await state.set_state(TaskStates.SHOWING_RESULT)
 
-                # Обновляем статистику
-                # await update_user_stats(
-                #     session=session,
-                #     user_id=callback.from_user.id,
-                #     task_id=task.id,
-                #     is_correct=is_correct
-                # )
-
-        # # Редактируем исходное сообщение с заданием
-        # await callback.message.edit_reply_markup(
-        #     reply_markup=None  # Убираем кнопки ответов
-        # )
-
-        # Отправляем результат
-        result_message = await callback.message.answer(
-            f"{'✅ Правильно!' if is_correct else '❌ Неверно!'}",
-            reply_markup=theory_solution_kb(task.id, task.complexity.value)
-        )
-
-        # Сохраняем ID сообщения с результатом /
-        # await state.update_data(result_message_id=result_message.message_id)
+                # Отправляем результат
+                await callback.answer()
+                await callback.message.answer(
+                    f"{'✅ Правильно!' if result['is_correct'] else '❌ Неверно!'}",
+                    reply_markup=theory_solution_kb(
+                        result['task_id'],
+                        result['complexity']
+                    )
+                )
 
     except Exception as e:
         logger.error(f"Error in handle_button_answer: {e}", exc_info=True)

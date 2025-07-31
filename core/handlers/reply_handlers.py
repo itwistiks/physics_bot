@@ -26,7 +26,8 @@ from core.keyboards.inline import (
     answer_options_kb,
     theory_solution_kb,
     topics_menu_kb,
-    difficult_topics_menu_kb
+    difficult_topics_menu_kb,
+    achievements_button
 )
 
 from sqlalchemy import select
@@ -45,7 +46,11 @@ from core.services.task_utils import (
 # from core.services.answer_processing import process_answer
 from core.services.task_utils import get_random_task
 from core.services.answer_checker import check_answer
-from core.services.stats_service import update_user_stats
+from core.services.stats_service import (
+    get_user_stats,
+    get_global_rank,
+    get_weekly_rank
+)
 
 from core.utils.debounce import throttle
 
@@ -92,6 +97,7 @@ async def practice_menu(message: types.Message, state: FSMContext, bot: Bot):
 
 
 @router.message(Text("📊 Статистика"))
+@throttle(2.0)
 async def show_stats(message: types.Message, state: FSMContext, bot: Bot):
     # Получаем сохраненный ID сообщения
     data = await state.get_data()
@@ -104,14 +110,49 @@ async def show_stats(message: types.Message, state: FSMContext, bot: Bot):
                 message_id=message_id
             )
         except Exception as e:
-            # Сообщение могло быть уже удалено или не найдено
             logger.debug(f"Не удалось удалить сообщение: {e}")
 
-    # Здесь будет логика получения статистики
-    await message.answer(
-        "Пока в разработке 🛠",
-        reply_markup=main_menu_kb()
-    )
+    async with AsyncSessionLocal() as session:
+        # Получаем статистику пользователя
+        stats = await get_user_stats(session, message.from_user.id)
+        if not stats:
+            await message.answer("Статистика пока недоступна")
+            return
+
+        # Формируем текст ответа
+        response = [
+            f"⚡️ Всего XP: {stats['total_xp']} | XP Недели: {stats['weekly_xp']}",
+            f"👤 Уровень {stats['level'][0]} - {stats['level'][1]}",
+            f"",
+            f"🔥 Текущая серия: {stats['streak']} дней!",
+            f"✅ Всего решено: {stats['total_tasks']} задач",
+            f"🎯 Общая точность: {int(stats['accuracy'])}%",
+            f""
+        ]
+
+        # Добавляем лучшую и худшую тему, если они есть
+        if stats['best_topic']:
+            response.append(
+                f"🏆 Лучшая тема: {stats['best_topic'].title_ru} ({int(stats['best_topic_accuracy'])}%)"
+            )
+        if stats['worst_topic']:
+            response.append(
+                f"⚠️ Тема для прокачки: {stats['worst_topic'].title_ru} ({int(stats['worst_topic_accuracy'])}%)"
+            )
+
+        # Добавляем рейтинги и достижения
+        response.extend([
+            f"",
+            f"🌍 Глобальный рейтинг: #{stats['global_rank']}",
+            f"📅 Недельный рейтинг: #{stats['weekly_rank']}",
+            f"🏆 Достижения: {stats['achievements_unlocked']}/{stats['achievements_total']}"
+        ])
+
+        # Создаем inline-кнопку для просмотра достижений
+        kb = achievements_button()
+
+        # Отправляем сообщение
+        await message.answer("\n".join(response), reply_markup=kb.as_markup())
 
 
 # Обработчик кнопки "Репетитор"

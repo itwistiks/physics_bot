@@ -135,3 +135,11 @@ async def difficult_topics_menu_kb():
 
         builder.adjust(2)  # 2 кнопки в ряд
         return builder.as_markup()
+
+
+def achievements_button() -> InlineKeyboardBuilder:
+    """Создает кнопку для просмотра достижений"""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🏅 Посмотреть достижения",
+              callback_data="show_achievements")
+    return kb

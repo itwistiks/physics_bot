@@ -112,6 +112,7 @@ class User(Base):
     progress = relationship(
         "UserProgress", back_populates="user", uselist=False)
     achievements = relationship("UserAchievement", back_populates="user")
+    weekly_xp = relationship("WeeklyXP", back_populates="user")
 
 
 class UserStat(Base):
@@ -141,7 +142,7 @@ class UserProgress(Base):
 
 class UserAchievement(Base):
     __tablename__ = 'user_achievements'
-    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'))
     achievement_id = Column(Integer, ForeignKey(
         'achievements.id'), primary_key=True)
     unlocked_at = Column(DateTime, nullable=True)
@@ -150,6 +151,16 @@ class UserAchievement(Base):
     user = relationship("User", back_populates="achievements")
     achievement = relationship(
         "Achievement", back_populates="user_achievements")
+
+
+class WeeklyXP(Base):
+    __tablename__ = 'weekly_xp'
+
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    week_start_date = Column(Date)  # Дата начала недели (понедельник)
+    xp_earned = Column(Integer, default=0)
+
+    user = relationship("User", back_populates="weekly_xp")
 
 
 # Достижения и напоминания
@@ -161,7 +172,7 @@ class Achievement(Base):
     name = Column(String(100))
     description = Column(Text)
     reward_points = Column(Integer)
-    condition = Column(Text)  # Логика проверки
+    conditions = Column(Text)  # Логика проверки
     icon = Column(String(255))  # URL иконки
 
     user_achievements = relationship(
