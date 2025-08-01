@@ -1,10 +1,11 @@
 import logging
 from datetime import datetime
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, update
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 from core.database.models import User, UserStat, UserProgress, Topic, Subtopic
+
 
 logger = logging.getLogger(__name__)
 
@@ -180,3 +181,13 @@ async def log_user_stats(session: AsyncSession, user_id: int):
     except SQLAlchemyError as e:
         logger.error(f"Error logging stats for user {user_id}: {str(e)}")
         return 0
+
+
+async def update_last_interaction(session: AsyncSession, user_id: int):
+    """Обновляет время последней активности пользователя"""
+    await session.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(last_interaction_time=datetime.utcnow())
+    )
+    await session.flush()

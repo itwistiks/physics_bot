@@ -106,7 +106,9 @@ class User(Base):
     status = Column(Enum(UserStatus), default=UserStatus.NO_SUB)
     phone = Column(String(20), nullable=True)
     city = Column(String(50), nullable=True)
-    last_interaction_time = Column(DateTime)
+    last_interaction_time = Column(DateTime)  # Когда последний раз был активен
+    # Когда последний раз отправляли напоминание
+    last_reminder_time = Column(DateTime, nullable=True)
 
     stats = relationship("UserStat", back_populates="user")
     progress = relationship(

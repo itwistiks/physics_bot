@@ -1,9 +1,12 @@
 from aiogram import Router, types
 from aiogram.filters import Command
 from aiogram.types import Message
+from aiogram.fsm.context import Bot
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 
+from core.utils.reminder_jobs import get_reminder_text
+from core.services.reminder_service import send_inactivity_reminders
 from core.filters.admin import IsAdminFilter
 from core.database.models import (
     User,
@@ -16,6 +19,11 @@ from core.database.models import (
 )
 
 from config.database import AsyncSessionLocal
+
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 router = Router()
@@ -108,12 +116,59 @@ async def cmd_users(message: types.Message):
 
 
 @router.message(Command("test_transaction"), IsAdminFilter())
-async def test_transaction(message: Message):
-    """Тест транзакций"""
+async def test_transaction(message: types.Message, bot: Bot):
+    """Полноценный тест системы напоминаний"""
     try:
         async with AsyncSessionLocal() as session:
-            async with session.begin():
-                count = await session.scalar(select(func.count(Task.id)))
-                await message.answer(f"Всего задач: {count}")
+            # 1. Получаем тестовые данные
+            reminder_text = await get_reminder_text(session, 'inactive')
+            user = await session.get(User, message.from_user.id)
+
+            # 2. Отправляем информационное сообщение
+            await message.answer(
+                f"🔧 Тест системы напоминаний\n"
+                f"──────────────────────\n"
+                f"ℹ️ Ваши данные:\n"
+                f"ID: {user.id}\n"
+                f"Username: @{user.username}\n"
+                f"Статус: {user.status}\n"
+                f"Последняя активность: {user.last_interaction_time}\n"
+                f"──────────────────────\n"
+                f"📝 Текст напоминания:\n{reminder_text}"
+            )
+
+            # 3. Имитируем реальное напоминание
+            try:
+                await bot.send_message(
+                    chat_id=user.id,
+                    text=f"🔔 Тестовое напоминание:\n\n{reminder_text}"
+                )
+                await message.answer("✅ Напоминание успешно отправлено!")
+            except Exception as e:
+                await message.answer(f"❌ Ошибка отправки: {str(e)}")
+
+    except Exception as e:
+        await message.answer(f"❌ Критическая ошибка: {str(e)}")
+        logger.critical(f"Reminder test failed: {e}", exc_info=True)
+
+
+@router.message(Command("simulate_inactivity"))
+async def simulate_inactivity(message: Message):
+    from datetime import datetime, timedelta
+    """Имитирует неактивность для теста"""
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, message.from_user.id)
+        user.last_interaction_time = datetime.utcnow() - timedelta(hours=25)
+        session.add(user)
+        await session.commit()
+    await message.answer("✅ Ваша последняя активность установлена 25 часов назад")
+
+
+@router.message(Command("test_reminder"))
+async def test_reminder(message: types.Message, bot: Bot):  # Добавьте bot в параметры
+    """Тест напоминаний"""
+    try:
+        await send_inactivity_reminders(bot)  # Передаем bot напрямую
+        await message.answer("Напоминания отправлены")
     except Exception as e:
         await message.answer(f"Ошибка: {str(e)}")

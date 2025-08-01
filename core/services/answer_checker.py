@@ -38,6 +38,10 @@ async def check_answer(
             is_correct=is_correct
         )
 
+        # Обновляем время последней активности
+        from core.services.user_service import update_last_interaction
+        await update_last_interaction(session, user_id)
+
         if not update_success:
             return {"error": "Failed to update stats"}
 
