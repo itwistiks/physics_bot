@@ -4,12 +4,12 @@ from aiogram.filters import Text, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.orm import selectinload
 import random
 
 from config.database import AsyncSessionLocal
-from core.database.models import Task, Theory, PartNumber, Complexity
+from core.database.models import Task, Theory, PartNumber, Complexity, Achievement
 from core.services.task_display import display_task
 
 from ..keyboards.inline import (
@@ -50,13 +50,40 @@ class TaskStates(StatesGroup):
 async def show_achievements_handler(callback: CallbackQuery):
     """Обработчик кнопки просмотра достижений"""
     try:
-        # Отвечаем всплывающим сообщением
-        await callback.answer(
-            "⏳ Система достижений пока в разработке",
-            show_alert=True
-        )
+        async with AsyncSessionLocal() as session:
+            # Получаем все достижения пользователя
+            from core.services.achievement_service import get_user_achievements
+            achievements = await get_user_achievements(session, callback.from_user.id)
+
+            if not achievements:
+                await callback.answer("У вас пока нет достижений", show_alert=True)
+                return
+
+            # Формируем текст сообщения
+            message_text = "🏆 Ваши достижения:\n\n"
+            for ua, achievement in achievements:
+                date_str = ua.unlocked_at.strftime(
+                    "%d.%m.%Y") if ua.unlocked_at else "Еще не получено"
+                message_text += (
+                    f"🔹 {achievement.name}\n"
+                    f"📝 {achievement.description}\n"
+                    f"📅 Получено: {date_str}\n\n"
+                )
+
+            # Получаем общее количество достижений
+            total_achievements = await session.scalar(select(func.count(Achievement.id)))
+            unlocked_count = len(achievements)
+            message_text += f"🔓 {unlocked_count}/{total_achievements} достижений разблокировано"
+
+            await callback.message.answer(message_text)
+            await callback.answer()
+
     except Exception as e:
         logger.error(f"Error in achievements handler: {e}")
+        await callback.answer(
+            "⏳ Произошла ошибка при загрузке достижений",
+            show_alert=True
+        )
 
 
 @router.callback_query(F.data.startswith("part_one:"))
@@ -274,37 +301,22 @@ async def handle_difficult_subtopic_selection(callback: CallbackQuery, state: FS
 @router.callback_query(F.data.startswith("answer:"))
 async def handle_button_answer(callback: CallbackQuery, state: FSMContext):
     try:
-        # Проверяем текущее состояние пользователя
         current_state = await state.get_state()
         if current_state != TaskStates.WAITING_ANSWER.state:
             await callback.answer("Это задание уже проверено", show_alert=True)
             return
 
-        # Проверяем, не устарел ли callback
-        try:
-            await callback.answer()  # Быстрый ответ, чтобы избежать ошибки "query is too old"
-        except Exception as e:
-            logger.warning(f"Callback answer error (likely expired): {e}")
-            return  # Просто выходим, если callback устарел
-
-        # Разбираем данные callback
         _, task_id, answer_idx = callback.data.split(":")
         task_id = int(task_id)
         answer_idx = int(answer_idx)
 
-        # Сразу отвечаем на callback, чтобы убрать анимацию
-        await callback.answer()
-
         async with AsyncSessionLocal() as session:
-            # Начинаем транзакцию на уровне обработчика
-            async with session.begin():
+            async with session.begin():  # Все в одной транзакции
                 task = await session.get(Task, task_id, with_for_update=True)
                 if not task:
                     await callback.answer("Задание не найдено", show_alert=True)
                     return
 
-                # Проверяем ответ
-                from core.services.answer_checker import check_answer
                 result = await check_answer(
                     session=session,
                     task_id=task_id,
@@ -316,18 +328,25 @@ async def handle_button_answer(callback: CallbackQuery, state: FSMContext):
                     await callback.answer(result["error"], show_alert=True)
                     return
 
-                # Обновляем состояние
-                await state.set_state(TaskStates.SHOWING_RESULT)
+                response = f"{'✅ Правильно!' if result['is_correct'] else '❌ Неверно!'}"
 
-                # Отправляем результат
+                if result.get('unlocked_achievements'):
+                    achievements_text = "\n\n".join(
+                        f"🎉 Новое достижение: {ach.name}!\n{ach.description}"
+                        for ach in result['unlocked_achievements']
+                    )
+                    response = f"{response}\n\n{achievements_text}"
+
                 await callback.answer()
                 await callback.message.answer(
-                    f"{'✅ Правильно!' if result['is_correct'] else '❌ Неверно!'}",
+                    response,
                     reply_markup=theory_solution_kb(
                         result['task_id'],
                         result['complexity']
                     )
                 )
+
+                await state.set_state(TaskStates.SHOWING_RESULT)
 
     except Exception as e:
         logger.error(f"Error in handle_button_answer: {e}", exc_info=True)
