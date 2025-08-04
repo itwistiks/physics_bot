@@ -7,3 +7,7 @@ class TaskStates(StatesGroup):
 
     TASK_LIST = State()  # Список заданий
     CURRENT_INDEX = State()  # Для хранения текущего индекса
+
+
+class AdminStates(StatesGroup):
+    CONFIRM_WEEKLY_RESET = State()

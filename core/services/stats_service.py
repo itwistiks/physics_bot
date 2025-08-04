@@ -190,18 +190,18 @@ async def get_user_stats_summary(session: AsyncSession, user_id: int):
 async def calculate_user_level(total_xp: int) -> tuple[int, str]:
     """Вычисляет уровень и титул пользователя на основе XP"""
     levels = {
-        0: "Новичок",
-        1000: "Ученик",
-        3000: "Знаток",
-        6000: "Эксперт",
-        10000: "Мастер",
-        15000: "Гуру",
-        30000: "Идеал",
-        50000: "Всевышний",
-        100000: "Непостижимый"
+        0: "<b>Новичок</b> → Ученик (6 ур.)",
+        500: "<b>Ученик</b> → Знаток (21 ур.)",
+        2000: "<b>Знаток</b> → Эксперт (51 ур.)",
+        5000: "<b>Эксперт</b> → Мастер (81 ур.)",
+        8000: "<b>Мастер</b> → Гуру (131 ур.)",
+        13000: "<b>Гуру</b> → Идеал (201 ур.)",
+        20000: "<b>Идеал</b> → Всевышний (501 ур.)",
+        50000: "<b>Всевышний</b> → Непостижимый (1001 ур.)",
+        100000: "<b>Непостижимый</b>"
     }
 
-    level = total_xp // 1000
+    level = total_xp // 100 + 1
     title = next(
         (title for xp, title in sorted(levels.items(), reverse=True) if total_xp >= xp)
     )
@@ -399,3 +399,18 @@ async def update_weekly_xp(session: AsyncSession, user_id: int) -> bool:
         logger.error(f"Error updating weekly XP: {e}")
         await session.rollback()
         return False
+
+
+async def reset_all_weekly_points(session: AsyncSession) -> int:
+    """Обнуляет weekly_points у всех пользователей и возвращает количество обновленных записей"""
+    try:
+        result = await session.execute(
+            update(UserProgress)
+            .values(weekly_points=0)
+        )
+        await session.commit()
+        return result.rowcount
+    except Exception as e:
+        logger.error(f"Error resetting weekly points: {e}")
+        await session.rollback()
+        return 0
