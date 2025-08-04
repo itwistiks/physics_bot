@@ -262,10 +262,10 @@ physics_bot/
 │   │
 │   ├── services/
 │   │   ├── __init__.py
-achievement_service.py
+│   │   ├── achievement_service.py  # Логика работы с достижениями (проверка/разблокировка)
 │   │   ├── answer_checker.py       # Проверка ответов пользователя
 │   │   ├── answer_processing.py    # (Лишний файл)
-│   │   ├── reminder_service.py
+│   │   ├── reminder_service.py     # Отправка напоминаний неактивным пользователям
 │   │   ├── stats_service.py        # Обновление статистики пользователя
 │   │   ├── task_display.py         # Форматирование и показ задач
 │   │   ├── task_service.py         # Основные операции с задачами
