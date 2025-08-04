@@ -227,13 +227,13 @@ physics_bot/
 │
 ├── config/
 │   ├── __init__.py
-│   ├── database.py        # Настройки AsyncSessionLocal
-│   └── settings.py        # Токены, константы
+│   ├── database.py                 # Настройки AsyncSessionLocal
+│   └── settings.py                 # Токены, константы
 │
 ├── core/
 │   ├── database/
 │   │   ├── __init__.py
-│   │   └── models.py      # SQLAlchemy модели (исправленная версия)
+│   │   └── models.py               # SQLAlchemy модели (исправленная версия)
 │   │
 │   ├── handlers/
 │   │   ├── __init__.py
@@ -242,53 +242,57 @@ physics_bot/
 │   │   ├── inline_handlers.py      # Обработка inline-кнопок (ответы на задачи)
 │   │   └── reply_handlers.py       # Обработка кнопок меню (практика, теория)
 │   │
-│   ├── filters/
+│   ├── filters/                    # Фильтр для команд
 │   │   ├── __init__.py
 │   │   └── admin.py
 │   │
 │   ├── fsm/
 │   │   ├── __init__.py
-│   │   └── states.py       	# Состояния бота (TaskStates и др.)
+│   │   └── states.py       	      # Состояния бота (TaskStates и др.)
 │   │
-│   ├── keyboards/		# Клавиатуры
+│   ├── keyboards/		            # Клавиатуры
 │   │   ├── __init__.py
 │   │   ├── inline.py
 │   │   └── reply.py
 │   │
 │   ├── middlewares/
 │   │   ├── __init__.py
-│   │   ├── cleanup_middleware.py
+│   │   ├── cleanup_middleware.py   # Удаляет предыдущие сообщения с кнопками
 │   │   └── user_middleware.py		# Middleware для автоматической регистрации пользователей
 │   │
 │   ├── services/
 │   │   ├── __init__.py
+achievement_service.py
 │   │   ├── answer_checker.py       # Проверка ответов пользователя
-│   │   ├── answer_processing.py    # (В разработке) Расширенная обработка ответов
-│   │   ├── user_service.py         # Работа с пользователями (get_or_create_user)
+│   │   ├── answer_processing.py    # (Лишний файл)
+│   │   ├── reminder_service.py
 │   │   ├── stats_service.py        # Обновление статистики пользователя
 │   │   ├── task_display.py         # Форматирование и показ задач
 │   │   ├── task_service.py         # Основные операции с задачами
-│   │   └── task_utils.py           # Вспомогательные функции (get_random_task)
+│   │   ├── task_utils.py           # Вспомогательные функции (get_random_task)
+│   │   └── user_service.py         # Работа с пользователями (get_or_create_user)
 │   │
 │   ├── utils/
-│   │   └── debounce.py
+│   │   ├── debounce.py             # Декоратор @throttle для защиты от спама кнопок
+│   │   ├── reminder_jobs.py        # Фоновые задачи для отправки напоминаний (Лишний файл)
+│   │   └── reminder_scheduler.py   # Планировщик периодических напоминаний
 │   │
 │   ├── __init__.py
-│   └── bot.py              # Основной файл инициализации бота
+│   └── bot.py                      # Основной файл инициализации бота
 │
-├── migrations/
+├── migrations/                     # Миграции
 │   ├── versions/
-│   │   ├── ...            # Предыдущие миграции
-│   │   └── XXX_manual_user_stats_fix.py  # Пустая миграция
+│   │   └── ...
 │   ├── env.py
 │   └── script.py.mako
 │
-├── venv/                  # Виртуальное окружение
+├── venv/                           # Виртуальное окружение
 │
 ├── .env                            # Переменные окружения (токены, доступы)
 ├── .gitignore                      # Игнорируемые файлы для Git
 ├── alembic.ini                     # Конфиг Alembic (миграции БД)
-├── bot.py                          # Точка входа (запуск бота)
 ├── README.md                       # Документация проекта
-└── requirements.txt                # Зависимости Python
+├── requirements.txt                # Зависимости Python
+├── setup.py                        # Конфигурация пакета
+└── start_bot.py                    # Точка входа (запуск бота)
 ```
