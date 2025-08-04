@@ -1,225 +1,100 @@
 import logging
 from datetime import datetime, timedelta
+from typing import List, Dict, Optional, Tuple
 from aiogram import Bot
-from sqlalchemy import select, and_, not_, or_
+from sqlalchemy import select, and_, or_, not_
 from sqlalchemy.ext.asyncio import AsyncSession
-from core.database.models import User, Reminder
+from core.database.models import User, Reminder, UserStatus
 from config.database import AsyncSessionLocal
-from aiogram.exceptions import TelegramNetworkError
-import asyncio
 
 logger = logging.getLogger(__name__)
 
 
-async def send_daily_reminders(bot: Bot):
-    """Отправляет напоминания в зависимости от времени неактивности"""
-    async with AsyncSessionLocal() as session:
-        try:
-            users = await get_users_for_reminders(session)
+class ReminderService:
+    def __init__(self, bot: Bot):
+        self.bot = bot
+        self.REMINDER_INTERVALS = {
+            'promo': [24, 48, 72],  # часы
+            'inactive': [120, 168, 240, 504, 720]  # часы
+        }
 
-            # Отправляем promo (24ч)
-            for user_id, username in users['promo']:
-                try:
-                    await bot.send_message(
-                        chat_id=user_id,
-                        text="📢 Не забудьте потренироваться сегодня! Начните с 5 задач для лучшего результата."
-                    )
-                    logger.info(
-                        f"Sent promo reminder to {username} ({user_id})")
-                except Exception as e:
-                    logger.error(f"Error sending promo to {user_id}: {e}")
+    async def get_users_for_reminders(self, session: AsyncSession) -> Dict[str, List[Tuple[int, str]]]:
+        """Возвращает пользователей для напоминаний, сгруппированных по типу"""
+        users = {'promo': [], 'inactive': []}
+        current_time = datetime.utcnow()
 
-            # Отправляем inactive (96ч)
-            for user_id, username in users['inactive']:
-                try:
-                    await bot.send_message(
-                        chat_id=user_id,
-                        text="📢 Давно не решали задачи! Вернитесь к практике сегодня!"
-                    )
-                    logger.info(
-                        f"Sent inactive reminder to {username} ({user_id})")
-                except Exception as e:
-                    logger.error(f"Error sending inactive to {user_id}: {e}")
-
-            await session.commit()
-        except Exception as e:
-            logger.error(f"Error in reminder system: {e}")
-            await session.rollback()
-
-
-async def get_users_for_reminders(session: AsyncSession):
-    """Новая оптимизированная версия"""
-    logger.info("Starting reminder check at %s", datetime.now())
-    users = await get_users_for_reminders(session)
-    logger.info("Found %d users for reminders", len(users))
-    for user_id, username, status, last_active in users:
-        logger.debug("Processing user %s (last active: %s)",
-                     username, last_active)
-
-    now = datetime.utcnow()
-    stmt = select(
-        User.id,
-        User.username,
-        User.status,
-        User.last_interaction_time
-    ).where(
-        and_(
-            User.status.in_(['no_sub', 'sub']),
-            or_(
-                and_(  # Для promo (24 часа)
-                    User.last_interaction_time < now - timedelta(hours=24),
-                    User.last_interaction_time >= now - timedelta(hours=96)
-                ),
-                and_(  # Для inactive (96 часов)
-                    User.last_interaction_time < now - timedelta(hours=96)
-                )
+        stmt = select(User.id, User.username, User.last_interaction_time).where(
+            and_(
+                not_(User.status.in_([
+                    UserStatus.ADMIN.value,
+                    UserStatus.MODERATOR.value,
+                    UserStatus.TEACHER.value
+                ])),
+                User.last_interaction_time.is_not(None)
             )
         )
-    ).execution_options(stream_results=True)
 
-    result = await session.execute(stmt)
-    return result.all()
+        result = await session.execute(stmt)
 
+        for user_id, username, last_interaction in result.all():
+            inactive_hours = (
+                current_time - last_interaction).total_seconds() / 3600
 
-async def get_reminder_text(session: AsyncSession, reminder_type: str) -> str:
-    """Получает текст напоминания из базы или возвращает default"""
-    try:
-        reminder = await session.execute(
-            select(Reminder.text)
-            .where(Reminder.reminder_type == reminder_type)
-            .order_by(Reminder.date.desc())
-            .limit(1)
-        )
-        return reminder.scalar_one_or_none() or get_default_reminder(reminder_type)
-    except Exception as e:
-        logger.error(f"Error getting reminder text: {e}")
-        return get_default_reminder(reminder_type)
+            for reminder_type, intervals in self.REMINDER_INTERVALS.items():
+                for interval in intervals:
+                    if abs(inactive_hours - interval) <= 1:  # допуск ±1 час
+                        users[reminder_type].append((user_id, username))
+                        break
 
+        return users
 
-def get_default_reminder(reminder_type: str) -> str:
-    """Тексты по умолчанию"""
-    return {
-        'inactive': "📢 Давно не решали задачи! Вернитесь к практике сегодня!",
-        'promo': "📢 Не забудьте потренироваться сегодня! Начните с 5 задач для лучшего результата.",
-        'holiday': "🎉 Поздравляем с праздником! Отличный день для обучения!"
-    }.get(reminder_type, "Не забывайте тренироваться каждый день!")
-
-
-async def check_inactive_users(session: AsyncSession):
-    """Проверяет неактивных пользователей за последние 24 часа"""
-    from config.settings import REMINDER_INTERVAL_MINUTES, MIN_REMINDER_GAP
-    inactive_threshold = datetime.utcnow() - timedelta(minutes=MIN_REMINDER_GAP)
-    # inactive_threshold = datetime.utcnow() - timedelta(hours=24)
-
-    stmt = select(User).where(
-        and_(
-            User.last_interaction_time < inactive_threshold,
-            or_(
-                User.last_interaction_time.is_(None),
-                User.last_interaction_time < inactive_threshold
-            ),
-            User.status.in_(['no_sub', 'sub'])  # Только обычные пользователи
-        )
-    )
-
-    result = await session.execute(stmt)
-    return result.scalars().all()
-
-
-async def send_inactivity_reminders(bot: Bot):
-    """Отправляет напоминания каждую минуту"""
-    async with AsyncSessionLocal() as session:
+    async def get_reminder_text(self, session: AsyncSession, reminder_type: str) -> Optional[str]:
+        """Получает текст напоминания из БД"""
         try:
-            users = await check_inactive_users(session)
+            stmt = select(Reminder.text).where(
+                Reminder.reminder_type == reminder_type
+            ).order_by(Reminder.date.desc()).limit(1)
 
-            for user in users:
-                try:
-                    # Проверяем, что не отправляли напоминание совсем недавно
-                    if user.last_interaction_time and (datetime.utcnow() - user.last_interaction_time) < timedelta(minutes=1):
-                        continue
-
-                    await bot.send_message(
-                        chat_id=user.id,
-                        text=await get_reminder_text(session, 'inactive')
-                    )
-
-                    # Обновляем время последнего напоминания
-                    user.last_interaction_time = datetime.utcnow()
-                    await session.commit()
-
-                except Exception as e:
-                    logger.error(f"Error sending to {user.id}: {e}")
-                    await session.rollback()
-
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
         except Exception as e:
-            logger.error(f"Reminder system error: {e}")
+            logger.error(f"Error getting reminder text: {e}")
+            return None
 
+    async def send_reminders(self) -> Dict[str, int]:
+        """Основной метод для отправки напоминаний"""
+        results = {'promo': 0, 'inactive': 0}
 
-async def check_and_send_reminders(bot: Bot):
-    async with AsyncSessionLocal() as session:
-        try:
-            async with session.begin():
-                users = await get_users_for_reminders(session)
+        async with AsyncSessionLocal() as session:
+            users = await self.get_users_for_reminders(session)
 
-                for user_id, username, status, last_active in users:
-                    reminder_type = get_reminder_type(last_active)
-                    text = await get_reminder_text(session, reminder_type)
+            for reminder_type, user_list in users.items():
+                text = await self.get_reminder_text(session, reminder_type) or self.get_default_text(reminder_type)
 
+                for user_id, username in user_list:
                     try:
-                        await bot.send_message(
+                        await self.bot.send_message(
                             chat_id=user_id,
                             text=text
                         )
-                        logger.info(f"Sent to {username}")
+                        results[reminder_type] += 1
+                        logger.info(
+                            f"Sent {reminder_type} reminder to {username} ({user_id})")
                     except Exception as e:
-                        logger.error(f"Send failed: {e}")
+                        logger.error(f"Failed to send to {user_id}: {e}")
 
-        except Exception as e:
-            logger.error(f"Database error: {e}")
-            raise
+        return results
 
-
-async def send_single_reminder(bot: Bot, session: AsyncSession, user_id: int, username: str, text: str):
-    """Отправка одного напоминания с обработкой ошибок"""
-    try:
-        user = await session.get(User, user_id)
-        user.last_reminder_time = datetime.utcnow()
-
-        await bot.send_message(
-            chat_id=user_id,
-            text=text
-        )
-        logger.info(f"Sent reminder to {username}")
-
-    except Exception as e:
-        logger.error(f"Failed to send to {username}: {e}")
+    @staticmethod
+    def get_default_text(reminder_type: str) -> str:
+        """Тексты по умолчанию"""
+        return {
+            'promo': "📢 Не забудьте потренироваться сегодня! Регулярные занятия - залог успеха!",
+            'inactive': "📢 Давно не виделись! Вернитесь к практике сегодня!"
+        }.get(reminder_type, "Не забывайте тренироваться каждый день!")
 
 
-async def send_message_with_retry(bot: Bot, chat_id: int, text: str, retries=2):
-    for attempt in range(retries):
-        try:
-            await bot.send_message(chat_id, text, request_timeout=10)
-            return True
-        except TelegramNetworkError:
-            if attempt < retries - 1:
-                await asyncio.sleep(2)
-    return False
-
-
-async def reminder_loop(bot: Bot):
-    """Безопасный цикл напоминаний"""
-    while True:
-        try:
-            logger.info("Starting reminder cycle...")
-            await check_and_send_reminders(bot)
-            logger.info("Reminder cycle completed")
-        except Exception as e:
-            logger.error(f"Reminder loop error: {e}")
-        finally:
-            await asyncio.sleep(60)  # Пауза 60 секунд
-
-
-def get_reminder_type(last_active: datetime) -> str:
-    """Определяет тип напоминания"""
-    inactive_period = datetime.utcnow() - last_active
-    return 'promo' if inactive_period < timedelta(hours=96) else 'inactive'
+async def send_inactivity_reminders(bot: Bot) -> Dict[str, int]:
+    """Функция для прямого импорта из других модулей"""
+    service = ReminderService(bot)
+    return await service.send_reminders()

@@ -26,7 +26,7 @@ def get_db():
 DB_URL = f"mysql+asyncmy://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}"
 engine = create_async_engine(
     DB_URL,
-    echo=True,
+    echo=True,  # Включеное логирование SQL-запросов
     pool_pre_ping=True,  # Проверка соединений перед использованием
     pool_size=5,
     max_overflow=10,
