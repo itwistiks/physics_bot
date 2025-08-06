@@ -19,7 +19,7 @@ def practice_menu_kb():
     builder.button(text="📋 Вариант")
     builder.button(text="📖 Темы")
     builder.button(text="🔥 Сложные задачи")
-    builder.button(text="👨‍🏫 Репетитор")
+    builder.button(text="👨‍🏫 Подписка")
     builder.button(text="✏️ Назад")
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)

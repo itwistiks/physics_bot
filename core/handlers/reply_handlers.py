@@ -175,12 +175,16 @@ async def tutor_redirect(message: types.Message, state: FSMContext, bot: Bot):
             logger.debug(f"Не удалось удалить сообщение: {e}")
 
     await message.answer(
-        "Переход к репетитору:",
+        "Улучши свои знания с репетитором или подпиской",
         reply_markup=types.InlineKeyboardMarkup(
             inline_keyboard=[[
                 types.InlineKeyboardButton(
-                    text="Перейти на сайт репетитора",
-                    url="https://google.com"
+                    text="Репетитор",
+                    url="https://cw10005.tw1.ru/"
+                ),
+                types.InlineKeyboardButton(
+                    text="Подписка",
+                    url="https://cw10005.tw1.ru/"
                 )
             ]]
         )
@@ -461,37 +465,40 @@ async def show_difficult_topics_menu(message: Message, state: FSMContext, bot: B
     await state.update_data(menu_message_id=sent_message.message_id)
 
 
-# # Обработчик кнопки "Репетитор"
+# # Обработчик кнопки "Подписка"
 
 
-# @router.message(Text("👨‍🏫 Репетитор"))
-# @throttle(2.0)
-# async def tutor_redirect(message: types.Message, state: FSMContext, bot: Bot):
-#     # Получаем сохраненный ID сообщения
-#     data = await state.get_data()
-#     message_id = data.get('menu_message_id')
+@router.message(Text("👨‍🏫 Подписка"))
+async def tutor_redirect(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
 
-#     if message_id:
-#         try:
-#             await bot.delete_message(
-#                 chat_id=message.chat.id,
-#                 message_id=message_id
-#             )
-#         except Exception as e:
-#             # Сообщение могло быть уже удалено или не найдено
-#             logger.debug(f"Не удалось удалить сообщение: {e}")
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
 
-#     await message.answer(
-#         "Переход к репетитору:",
-#         reply_markup=types.InlineKeyboardMarkup(
-#             inline_keyboard=[[
-#                 types.InlineKeyboardButton(
-#                     text="Перейти на сайт репетитора",
-#                     url="https://google.com"
-#                 )
-#             ]]
-#         )
-#     )
+    await message.answer(
+        "Улучши свои знания с репетитором или подпиской",
+        reply_markup=types.InlineKeyboardMarkup(
+            inline_keyboard=[[
+                types.InlineKeyboardButton(
+                    text="Репетитор",
+                    url="https://cw10005.tw1.ru/"
+                ),
+                types.InlineKeyboardButton(
+                    text="Подписка",
+                    url="https://cw10005.tw1.ru/"
+                )
+            ]]
+        )
+    )
 
 
 # Обработчик кнопки "Назад"
