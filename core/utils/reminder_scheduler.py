@@ -37,6 +37,6 @@ class ReminderScheduler:
                 except Exception as e:
                     logger.error(f"Reminder error: {e}")
 
-                await asyncio.sleep(3600)  # Каждый час
+                await asyncio.sleep(3590)  # Каждый час
         except asyncio.CancelledError:
             logger.info("Scheduler stopped")

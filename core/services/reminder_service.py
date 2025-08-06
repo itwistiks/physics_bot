@@ -15,7 +15,7 @@ class ReminderService:
         self.bot = bot
         self.check_interval = 3600  # Интервал в секундах (1 час)
         self.REMINDER_INTERVALS = {
-            'promo': [1, 2, 24, 48, 72],  # часы (1, 2 - убрать)
+            'promo': [24, 48, 72],  # часы (1, 2 - убрать)
             'inactive': [120, 168, 240, 504, 720]  # часы
         }
 

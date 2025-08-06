@@ -1,41 +1,40 @@
-aiofiles               23.1.0
-aiogram                3.0.0b7
-aiohttp                3.8.4
-aiomysql               0.2.0
-aiosignal              1.4.0
-alembic                1.16.4
-anyio                  4.9.0
-APScheduler            3.11.0
-async-timeout          4.0.3
-asyncmy                0.2.10
-attrs                  25.3.0
-certifi                2025.7.14
-charset-normalizer     3.4.2
-colorama               0.4.6
-frozenlist             1.7.0
-greenlet               3.2.3
-idna                   3.10
-iniconfig              2.1.0
-magic-filter           1.0.12
-Mako                   1.3.10
-MarkupSafe             3.0.2
-multidict              6.6.3
-mysql-connector-python 8.1.0
-packaging              25.0
-pip                    25.1.1
-pluggy                 1.6.0
-propcache              0.3.2
-protobuf               4.21.12
-pydantic               1.10.22
-Pygments               2.19.2
-PyMySQL                1.1.1
-pytest                 8.4.1
-pytest-asyncio         1.1.0
-python-dotenv          1.0.0
-setuptools             65.5.0
-sniffio                1.3.1
-SQLAlchemy             2.0.41
-typing_extensions      4.14.1
-tzdata                 2025.2
-tzlocal                5.3.1
-yarl                   1.20.1
+aiofiles==23.1.0
+aiogram==3.0.0b7
+aiohttp==3.8.4
+aiomysql==0.2.0
+aiosignal==1.4.0
+alembic==1.16.4
+anyio==4.9.0
+APScheduler==3.11.0
+async-timeout==4.0.3
+asyncmy==0.2.10
+attrs==25.3.0
+certifi==2025.7.14
+charset-normalizer==3.4.2
+colorama==0.4.6
+frozenlist==1.7.0
+greenlet==3.2.3
+idna==3.10
+iniconfig==2.1.0
+magic-filter==1.0.12
+Mako==1.3.10
+MarkupSafe==3.0.2
+multidict==6.6.3
+mysql-connector-python==8.1.0
+packaging==25.0
+# -e git+https://github.com/itwistiks/physics_bot.git@d22aa60400c46ccb6eed236dc4c3c342c3e25f8b#egg=physics_bot
+pluggy==1.6.0
+propcache==0.3.2
+protobuf==4.21.12
+pydantic==1.10.22
+Pygments==2.19.2
+PyMySQL==1.1.1
+pytest==8.4.1
+pytest-asyncio==1.1.0
+python-dotenv==1.0.0
+sniffio==1.3.1
+SQLAlchemy==2.0.41
+typing_extensions==4.14.1
+tzdata==2025.2
+tzlocal==5.3.1
+yarl==1.20.1
