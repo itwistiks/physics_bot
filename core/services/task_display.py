@@ -21,7 +21,7 @@ async def display_task(message: Message, task: Task, state: FSMContext):
             complexity_marker = "🔥 "
 
         text = (
-            f"📌 Номер задания: {task.id} {complexity_marker}\n\n"
+            f"📌 Номер задания: {task.id} {complexity_marker}\n"
             f"Тип задания: {task.type_number}\n\n"
             f"{task.task_content['text']}\n\n"
         )
@@ -31,7 +31,7 @@ async def display_task(message: Message, task: Task, state: FSMContext):
         task_text = task.task_content.get('text', 'Текст задания отсутствует')
 
         if image_url:
-            # Если есть изображение - отправляем фото с подписью
+            # Если есть изображение - пытаемся отправить фото с подписью
             try:
                 msg = await message.answer_photo(
                     photo=image_url,
@@ -40,13 +40,28 @@ async def display_task(message: Message, task: Task, state: FSMContext):
                         task.answer_options, task.id)
                 )
             except Exception as e:
-                logger.error(f"Error sending photo: {e}")
-                # Если не удалось отправить фото, отправляем просто текст
-                msg = await message.answer(
-                    task_text + "\n\n⚠️ Не удалось загрузить изображение",
-                    reply_markup=answer_options_kb(
-                        task.answer_options, task.id)
-                )
+                logger.error(f"Error sending photo with caption: {e}")
+
+                # Пытаемся отправить изображение отдельным сообщением
+                try:
+                    # Сначала отправляем изображение
+                    await message.answer_photo(
+                        photo=image_url
+                    )
+                    # Затем отправляем текст задания с клавиатурой
+                    msg = await message.answer(
+                        text + "\n\nИзображение отправлено отдельным сообщением",
+                        reply_markup=answer_options_kb(
+                            task.answer_options, task.id)
+                    )
+                except Exception as e2:
+                    logger.error(f"Error sending photo separately: {e2}")
+                    # Если не удалось отправить вообще, отправляем только текст
+                    msg = await message.answer(
+                        text + "\n\n⚠️ Не удалось загрузить изображение",
+                        reply_markup=answer_options_kb(
+                            task.answer_options, task.id)
+                    )
         else:
             # Если нет изображения - отправляем только текст
             msg = await message.answer(

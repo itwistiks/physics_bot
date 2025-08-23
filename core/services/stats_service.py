@@ -38,18 +38,43 @@ async def update_user_stats(
             return False
 
         # Определяем количество очков
+        premium_statuses = [UserStatus.SUB, UserStatus.PRO_SUB]
+        standard_statuses = [UserStatus.NO_SUB, UserStatus.ADMIN,
+                             UserStatus.MODERATOR, UserStatus.TEACHER]
+
         if task.complexity == Complexity.BASIC:
-            points = 2 if (is_correct and user.status == UserStatus.SUB) else \
-                1 if (is_correct and user.status == UserStatus.NO_SUB) else \
-                -1
+            if is_correct:
+                if user.status in premium_statuses:
+                    points = 2
+                elif user.status in standard_statuses:
+                    points = 1
+                else:
+                    points = 0
+            else:
+                points = -1
+
         elif task.complexity == Complexity.ADVANCED:
-            points = 6 if (is_correct and user.status == UserStatus.SUB) else \
-                4 if (is_correct and user.status == UserStatus.NO_SUB) else \
-                -2
+            if is_correct:
+                if user.status in premium_statuses:
+                    points = 6
+                elif user.status in standard_statuses:
+                    points = 4
+                else:
+                    points = 0
+            else:
+                points = -2
+
         elif task.complexity == Complexity.HIGH:
-            points = 20 if (is_correct and user.status == UserStatus.SUB) else \
-                15 if (is_correct and user.status == UserStatus.NO_SUB) else \
-                -6
+            if is_correct:
+                if user.status in premium_statuses:
+                    points = 20
+                elif user.status in standard_statuses:
+                    points = 15
+                else:
+                    points = 0
+            else:
+                points = -6
+
         else:
             points = 0
 

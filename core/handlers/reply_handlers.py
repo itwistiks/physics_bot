@@ -770,12 +770,13 @@ async def handle_text_answer(message: Message, state: FSMContext):
                     await message.answer("⚠️ Ошибка при проверке ответа")
                     return
 
-                # Отправляем результат
+                # Отправляем результат - ИСПРАВЛЕНО использование result
                 await message.answer(
                     f"{'✅ Правильно!' if result['is_correct'] else '❌ Неверно!'}",
                     reply_markup=theory_solution_kb(
-                        task_id,
-                        result['task'].complexity.value
+                        result['task_id'],  # Используем task_id из результата
+                        # Используем complexity из результата
+                        result['complexity']
                     )
                 )
 

@@ -331,14 +331,15 @@ async def handle_button_answer(callback: CallbackQuery, state: FSMContext):
                     await callback.answer("Ошибка при проверке ответа", show_alert=True)
                     return
 
-                # Отправляем результат
+                # Отправляем результат - ИСПРАВЛЕНО использование result
                 await state.set_state(TaskStates.SHOWING_RESULT)
                 await callback.answer()
                 await callback.message.answer(
                     f"{'✅ Правильно!' if result['is_correct'] else '❌ Неверно!'}",
                     reply_markup=theory_solution_kb(
-                        task_id,
-                        task.complexity.value
+                        result['task_id'],  # Используем task_id из результата
+                        # Используем complexity из результата
+                        result['complexity']
                     )
                 )
 
@@ -381,10 +382,17 @@ async def show_theory(callback: CallbackQuery):
                 )
 
                 try:
-                    await callback.message.answer(theory_text, parse_mode="Markdown")
+                    # Пытаемся отправить с Markdown разметкой
+                    await callback.message.answer(theory_text, parse_mode="HTML")
                 except Exception as e:
-                    logger.error(f"Markdown error: {e}")
-                    await callback.message.answer(theory_text)
+                    logger.error(f"HTML error: {e}")
+                    try:
+                        # Если Markdown не работает, пробуем HTML
+                        await callback.message.answer(theory_text, parse_mode="Markdown")
+                    except Exception as e2:
+                        logger.error(f"Markdown error: {e2}")
+                        # Если ничего не работает, отправляем без форматирования
+                        await callback.message.answer(theory_text)
 
                 # Транзакция закоммитится автоматически при выходе из блока
 
