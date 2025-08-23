@@ -311,42 +311,36 @@ async def handle_button_answer(callback: CallbackQuery, state: FSMContext):
         answer_idx = int(answer_idx)
 
         async with AsyncSessionLocal() as session:
-            async with session.begin():  # Все в одной транзакции
+            async with session.begin():
                 task = await session.get(Task, task_id, with_for_update=True)
                 if not task:
                     await callback.answer("Задание не найдено", show_alert=True)
                     return
 
+                # Проверяем ответ
+                from core.services.task_service import check_answer
                 result = await check_answer(
                     session=session,
                     task_id=task_id,
                     user_answer=task.answer_options[answer_idx],
-                    user_id=callback.from_user.id
+                    user_id=callback.from_user.id,
+                    state=state
                 )
 
-                if "error" in result:
-                    await callback.answer(result["error"], show_alert=True)
+                if not result["success"]:
+                    await callback.answer("Ошибка при проверке ответа", show_alert=True)
                     return
 
-                response = f"{'✅ Правильно!' if result['is_correct'] else '❌ Неверно!'}"
-
-                if result.get('unlocked_achievements'):
-                    achievements_text = "\n\n".join(
-                        f"🎉 Новое достижение: {ach.name}!\n{ach.description}"
-                        for ach in result['unlocked_achievements']
-                    )
-                    response = f"{response}\n\n{achievements_text}"
-
+                # Отправляем результат
+                await state.set_state(TaskStates.SHOWING_RESULT)
                 await callback.answer()
                 await callback.message.answer(
-                    response,
+                    f"{'✅ Правильно!' if result['is_correct'] else '❌ Неверно!'}",
                     reply_markup=theory_solution_kb(
-                        result['task_id'],
-                        result['complexity']
+                        task_id,
+                        task.complexity.value
                     )
                 )
-
-                await state.set_state(TaskStates.SHOWING_RESULT)
 
     except Exception as e:
         logger.error(f"Error in handle_button_answer: {e}", exc_info=True)

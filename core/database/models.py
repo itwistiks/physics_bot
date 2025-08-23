@@ -144,7 +144,7 @@ class UserProgress(Base):
 
 class UserAchievement(Base):
     __tablename__ = 'user_achievements'
-    user_id = Column(Integer, ForeignKey('users.id'))
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
     achievement_id = Column(Integer, ForeignKey(
         'achievements.id'), primary_key=True)
     unlocked_at = Column(DateTime, nullable=True)

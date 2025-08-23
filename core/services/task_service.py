@@ -23,54 +23,45 @@ logger = logging.getLogger(__name__)
 
 
 async def check_answer(
-    *,
     session: AsyncSession,
-    message: Message | None = None,
-    callback: CallbackQuery | None = None,
     task_id: int,
     user_answer: str,
-    state: FSMContext
+    user_id: int,
+    state: FSMContext | None = None  # Делаем state опциональным
 ) -> bool:
     """Проверка ответа с полным обновлением статистики"""
     try:
-        user_id = callback.from_user.id if callback else message.from_user.id
+        # Получаем задачу
+        task = await session.get(Task, task_id)
+        if not task:
+            logger.error(f"Task {task_id} not found")
+            return False
 
-        # Обновляем weekly_points при необходимости
-        from .stats_service import update_weekly_xp
-        await update_weekly_xp(session, user_id)
-
-        # Обновляем основную статистику
-        from .stats_service import update_user_stats
+        # Проверяем ответ
         is_correct = str(user_answer).strip().lower() == str(
-            (await session.get(Task, task_id)).correct_answer).strip().lower()
+            task.correct_answer).strip().lower()
 
-        if not await update_user_stats(session, user_id, task_id, is_correct):
-            raise Exception("Failed to update user stats")
+        # Обновляем статистику
+        from .stats_service import update_user_stats
+        update_success = await update_user_stats(
+            session=session,
+            user_id=user_id,
+            task_id=task_id,
+            is_correct=is_correct
+        )
 
-        # Отправляем результат пользователю
-        result_text = f"{'✅ Правильно!' if is_correct else '❌ Неверно!'}"
-        if callback:
-            await callback.answer(result_text)
-            await callback.message.answer(
-                result_text,
-                reply_markup=theory_solution_kb(task_id, (await session.get(Task, task_id)).complexity.value)
-            )
-        elif message:
-            await message.answer(
-                result_text,
-                reply_markup=theory_solution_kb(task_id, (await session.get(Task, task_id)).complexity.value)
-            )
+        if not update_success:
+            logger.error(f"Failed to update stats for user {user_id}")
+            return False
 
-        await state.set_state(TaskStates.SHOWING_RESULT)
-        return True
+        # Если передан state, обновляем его
+        if state:
+            await state.set_state(TaskStates.SHOWING_RESULT)
+
+        return {"success": True, "is_correct": is_correct, "task": task}
 
     except Exception as e:
         logger.error(f"Error in check_answer: {e}", exc_info=True)
-        error_msg = "⚠️ Ошибка при обновлении статистики"
-        if callback:
-            await callback.answer(error_msg, show_alert=True)
-        elif message:
-            await message.answer(error_msg)
         return False
 
 

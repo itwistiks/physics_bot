@@ -750,19 +750,33 @@ async def stop_practice(message: Message, state: FSMContext, bot: Bot):  # До�
 
 @router.message(F.text, StateFilter(TaskStates.WAITING_ANSWER))
 async def handle_text_answer(message: Message, state: FSMContext):
-    """Обработчик текстовых ответов с сохранением check_answer()"""
+    """Обработчик текстовых ответов"""
     try:
         data = await state.get_data()
         task_id = data['current_task_id']
 
         async with AsyncSessionLocal() as session:
             async with session.begin():
-                await check_answer(
+                from core.services.task_service import check_answer
+                result = await check_answer(
                     session=session,
-                    message=message,
                     task_id=task_id,
                     user_answer=message.text,
+                    user_id=message.from_user.id,
                     state=state
+                )
+
+                if not result["success"]:
+                    await message.answer("⚠️ Ошибка при проверке ответа")
+                    return
+
+                # Отправляем результат
+                await message.answer(
+                    f"{'✅ Правильно!' if result['is_correct'] else '❌ Неверно!'}",
+                    reply_markup=theory_solution_kb(
+                        task_id,
+                        result['task'].complexity.value
+                    )
                 )
 
     except Exception as e:
