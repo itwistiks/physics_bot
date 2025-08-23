@@ -12,11 +12,15 @@ reminder_scheduler = None
 async def register_handlers():
     """Регистрирует все обработчики команд"""
     from core.handlers.common import router as common_router
+    from core.handlers.teacher import router as teacher_router
+    from core.handlers.moderator import router as moderator_router
     from core.handlers.admin import router as admin_router
     from core.handlers.inline_handlers import router as inline_router
     from core.handlers.reply_handlers import router as reply_router
 
     dp.include_router(common_router)
+    dp.include_router(teacher_router)
+    dp.include_router(moderator_router)
     dp.include_router(admin_router)
     dp.include_router(inline_router)
     dp.include_router(reply_router)

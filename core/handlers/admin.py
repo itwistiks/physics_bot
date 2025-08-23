@@ -1,4 +1,4 @@
-from aiogram import Router, types
+from aiogram import Router, types, Bot
 from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.fsm.context import Bot
@@ -37,26 +37,27 @@ router = Router()
 
 @router.message(Command("users"), IsAdminFilter())
 async def cmd_users(message: types.Message):
+    """Список всех пользователей"""
     async with AsyncSessionLocal() as session:
-        users = await session.scalars(select(User))
-        user_list = "\n".join(
-            f"{user.id} | @{user.username or 'нет'} | {user.status.value}"
-            for user in users
+        users = await session.scalars(
+            select(User).order_by(User.registration_date.desc())
         )
 
-    await message.answer(f"👥 Список пользователей:\n\n{user_list}")
+        user_list = []
+        for user in users:
+            status_emoji = {
+                'no_sub': '🔴', 'sub': '🟢', 'pro_sub': '🔵',
+                'teacher': '👨‍🏫', 'moderator': '🔧', 'admin': '⚡'
+            }.get(user.status.value, '⚪')
 
+            user_list.append(
+                f"{status_emoji} {user.id} | @{user.username or 'нет'} | "
+                f"{user.status.value} | {user.registration_date.strftime('%d.%m.%Y')}"
+            )
 
-# @router.message(Command("simulate_inactivity"), IsAdminFilter())
-# async def simulate_inactivity(message: Message):
-#     from datetime import datetime, timedelta
-#     """Имитирует неактивность для теста"""
-#     async with AsyncSessionLocal() as session:
-#         user = await session.get(User, message.from_user.id)
-#         user.last_interaction_time = datetime.utcnow() - timedelta(hours=25)
-#         session.add(user)
-#         await session.commit()
-#     await message.answer("✅ Ваша последняя активность установлена 25 часов назад")
+        # Разбиваем на сообщения по 20 пользователей
+        for i in range(0, len(user_list), 20):
+            await message.answer("\n".join(user_list[i:i+20]))
 
 
 @router.message(Command("test_reminder"), IsAdminFilter())
@@ -144,12 +145,78 @@ async def cancel_reset_weekly(message: types.Message, state: FSMContext):
     await state.clear()
 
 
+@router.message(Command("broadcast"), IsAdminFilter())
+async def cmd_broadcast(message: types.Message, bot: Bot):  # Правильный тип
+    """Массовая рассылка сообщения всем пользователям"""
+    try:
+        # Извлекаем текст рассылки
+        if len(message.text.split()) < 2:
+            await message.answer("❌ Использование: /broadcast <текст сообщения>")
+            return
+
+        broadcast_text = message.text.split(' ', 1)[1]
+
+        async with AsyncSessionLocal() as session:
+            # Получаем всех пользователей
+            users = await session.scalars(select(User))
+
+            success = 0
+            failed = 0
+            failed_users = []
+
+            # Отправляем сообщение каждому пользователю
+            for user in users:
+                try:
+                    await bot.send_message(
+                        user.id,
+                        f"📢 Сообщение от администратора:\n\n{broadcast_text}"
+                    )
+                    success += 1
+                except Exception as e:
+                    failed += 1
+                    failed_users.append(
+                        f"{user.id} (@{user.username or 'нет'})")
+                    # Логируем ошибку для диагностики
+                    print(
+                        f"Не удалось отправить пользователю {user.id}: {str(e)}")
+
+            # Формируем отчет
+            report = (
+                f"✅ Рассылка завершена:\n"
+                f"✔️ Успешно: {success}\n"
+                f"❌ Не удалось: {failed}"
+            )
+
+            # Добавляем список неудавшихся, если их немного
+            if failed_users and len(failed_users) <= 10:
+                report += f"\n\nНе удалось отправить:\n" + \
+                    "\n".join(failed_users[:10])
+            elif failed > 0:
+                report += f"\n\nНе удалось отправить {failed} пользователям"
+
+            await message.answer(report)
+
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при рассылке: {str(e)}")
+
+
 @router.message(Command("ahelp"), IsAdminFilter())
 async def cmd_help(message: types.Message):
     help_text = """
+⚡ Команды Админа:
 /users - список пользователей
 /test_reminder - тест напоминаний
 /send_reminders - ручная отправка напоминаний всем пользователям
 /reset_weekly - обнуляет weekly_points у всех пользователей
+/broadcast [сообщение] - массовая рассылка сообщения
+
+🔧 Команды модератора:
+/active_users - Самые активные пользователи
+/top_users - Топ 10 по общему XP
+/top_weekly_users - Топ 10 за неделю
+
+👨‍🏫 Команды преподавателя:
+/student_progress [@username] - Прогресс студента
+/send_feedback [@username] [message] - Отправить feedback
 """
     await message.answer(help_text, parse_mode="HTML")
