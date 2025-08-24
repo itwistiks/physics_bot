@@ -1,6 +1,7 @@
 # 📚 Physics Bot - Telegram Bot
 
 [![Telegram Bot](https://img.shields.io/badge/🤖_Telegram_Bot-@OGE_t_physicsBot-blue)] _Нажмите чтобы перейти к боту_
+
 [![Python 3.11](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/downloads/windows/) _Новые версии могут не работать_
 
 [![Open Server Panel](https://img.shields.io/badge/Open_Server-5.3.8-lightgrey)](https://ospanel.io/) _Версия с MySQL 8.4_
