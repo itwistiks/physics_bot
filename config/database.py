@@ -1,57 +1,44 @@
 import os
-import ssl
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
-from dotenv import load_dotenv
-
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-
+from sqlalchemy.orm import declarative_base
+from dotenv import load_dotenv
+from urllib.parse import quote_plus
+import ssl
 
 load_dotenv()
 
-
 Base = declarative_base()
-engine = create_engine(os.getenv('DB_FULL_URL'))
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+# Экранируем пароль
+db_password = os.getenv('DB_PASSWORD')
+escaped_password = quote_plus(db_password)
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# URL для aiomysql (БЕЗ SSL параметров в URL!)
+DB_URL = f"mysql+aiomysql://{os.getenv('DB_USER')}:{escaped_password}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
 
-
-DB_URL = f"mysql+asyncmy://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}"
-
-
-# Создаем SSL контекст
+# # SSL контекст для aiomysql
 # ssl_context = ssl.create_default_context(cafile='/root/.cloud-certs/root.crt')
 # ssl_context.check_hostname = False
-# ssl_context.verify_mode = ssl.CERT_REQUIRED
 
+# # Параметры подключения для aiomysql
+# connect_args = {
+#     "ssl": ssl_context
+# }
 
 engine = create_async_engine(
     DB_URL,
-    echo=True,  # Включеное логирование SQL-запросов
-    pool_pre_ping=True,  # Проверка соединений перед использованием
+    echo=True,
+    # connect_args=connect_args,
+    pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
-    pool_recycle=3600,
-    # connect_args={
-    #     "ssl": ssl_context  # ← ВОТ ЭТО ГЛАВНОЕ!
-    # }
-)  # echo=True для логов SQL
+    pool_recycle=3600
+)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autoflush=False,
-    autocommit=False,
-    future=True
+    autocommit=False
 )
-
-Base = declarative_base()

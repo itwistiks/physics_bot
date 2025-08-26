@@ -46,14 +46,17 @@ async def check_answer(
             return {"error": "Failed to update stats"}
 
         # Проверяем достижения в той же транзакции
+        logger.info(f"Checking achievements for user {user_id}")
         unlocked_achievements = await check_and_unlock_achievements(
             session=session,
             user_id=user_id,
             is_correct=is_correct,  # Передаем флаг правильности ответа
             task_id=task_id
         )
+        logger.info(f"Unlocked achievements: {len(unlocked_achievements)}")
 
         return {
+            "success": True,
             "is_correct": is_correct,
             "task_id": task_id,
             "complexity": task.complexity.value,

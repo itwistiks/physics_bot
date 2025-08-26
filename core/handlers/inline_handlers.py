@@ -26,7 +26,7 @@ from ..keyboards.reply import (
 from core.services.task_display import display_task, display_task_by_id
 from core.services.task_utils import get_shuffled_task_ids
 # from core.services.answer_processing import process_answer
-from core.services.answer_checker import check_answer
+from core.services.task_service import check_answer
 
 from core.utils.debounce import throttle
 
@@ -317,6 +317,7 @@ async def handle_button_answer(callback: CallbackQuery, state: FSMContext):
                     await callback.answer("Задание не найдено", show_alert=True)
                     return
 
+                logger.info("Calling check_answer from inline_handlers.py")
                 # Проверяем ответ
                 from core.services.task_service import check_answer
                 result = await check_answer(
@@ -330,6 +331,24 @@ async def handle_button_answer(callback: CallbackQuery, state: FSMContext):
                 if not result["success"]:
                     await callback.answer("Ошибка при проверке ответа", show_alert=True)
                     return
+
+                # # ✅ ДОБАВЬТЕ ПРЯМО ЗДЕСЬ ВЫЗОВ ДОСТИЖЕНИЙ
+                # from core.services.achievement_service import check_and_unlock_achievements
+                # unlocked_achievements = await check_and_unlock_achievements(
+                #     session=session,
+                #     user_id=callback.from_user.id,
+                #     is_correct=result["is_correct"],
+                #     task_id=task_id
+                # )
+
+                # ДОБАВЬТЕ ОБРАБОТКУ ДОСТИЖЕНИЙ ЗДЕСЬ:
+                if "unlocked_achievements" in result and result["unlocked_achievements"]:
+                    for achievement in result["unlocked_achievements"]:
+                        await callback.message.answer(
+                            f"🎉 Новое достижение!\n"
+                            f"🏆 {achievement.name}\n"
+                            f"📝 {achievement.description}"
+                        )
 
                 # Отправляем результат - ИСПРАВЛЕНО использование result
                 await state.set_state(TaskStates.SHOWING_RESULT)

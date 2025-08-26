@@ -45,7 +45,7 @@ from core.services.task_utils import (
 )
 # from core.services.answer_processing import process_answer
 from core.services.task_utils import get_random_task
-from core.services.answer_checker import check_answer
+from core.services.task_service import check_answer
 from core.services.stats_service import (
     get_user_stats,
     get_global_rank,
@@ -571,7 +571,7 @@ async def random_tasks(message: Message, state: FSMContext, bot: Bot):
 # Обработчик кнопки "Первая часть"
 
 
-@router.message(Text("📋 Первая часть"))
+@router.message(Text("1️⃣ Первая часть"))
 @throttle(2.0)
 async def show_part_one_menu(message: Message, bot: Bot, state: FSMContext):
     # Получаем сохраненный ID сообщения
@@ -600,7 +600,7 @@ async def show_part_one_menu(message: Message, bot: Bot, state: FSMContext):
 # Обработчик кнопки "Вторая часть"
 
 
-@router.message(Text("📘 Вторая часть"))
+@router.message(Text("2️⃣ Вторая часть"))
 @throttle(2.0)
 async def show_part_two_menu(message: Message, bot: Bot, state: FSMContext):
     # Получаем сохраненный ID сообщения
@@ -757,6 +757,7 @@ async def handle_text_answer(message: Message, state: FSMContext):
 
         async with AsyncSessionLocal() as session:
             async with session.begin():
+                logger.info("Calling check_answer from reply_handlers.py")
                 from core.services.task_service import check_answer
                 result = await check_answer(
                     session=session,
@@ -769,6 +770,27 @@ async def handle_text_answer(message: Message, state: FSMContext):
                 if not result["success"]:
                     await message.answer("⚠️ Ошибка при проверке ответа")
                     return
+
+                # ✅ ДОБАВЬТЕ ПРЯМО ЗДЕСЬ
+                # from core.services.achievement_service import check_and_unlock_achievements
+                # unlocked_achievements = await check_and_unlock_achievements(
+                #     session=session,
+                #     user_id=message.from_user.id,
+                #     is_correct=result["is_correct"],
+                #     task_id=task_id
+                # )
+
+                # ✅ ДОБАВЬТЕ ОБРАБОТКУ ДОСТИЖЕНИЙ ЗДЕСЬ:
+                if "unlocked_achievements" in result and result["unlocked_achievements"]:
+                    for achievement in result["unlocked_achievements"]:
+                        await message.answer(
+                            f"🎉 Новое достижение!\n"
+                            f"🏆 {achievement.name}\n"
+                            f"📝 {achievement.description}"
+                        )
+
+                # Меняем состояние после проверки ответа
+                await state.set_state(TaskStates.SHOWING_RESULT)
 
                 # Отправляем результат - ИСПРАВЛЕНО использование result
                 await message.answer(

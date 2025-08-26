@@ -200,12 +200,45 @@ async def cmd_broadcast(message: types.Message, bot: Bot):  # Правильны
         await message.answer(f"❌ Ошибка при рассылке: {str(e)}")
 
 
+@router.message(Command("test_achievements"), IsAdminFilter())
+async def test_achievements(message: Message):
+    from core.services.achievement_service import check_and_unlock_achievements
+
+    """Тестовая команда для проверки достижений"""
+    try:
+        async with AsyncSessionLocal() as session:
+            logger.info("Manual achievement check started")
+
+            unlocked = await check_and_unlock_achievements(
+                session=session,
+                user_id=message.from_user.id,
+                is_correct=True,
+                task_id=None
+            )
+
+            logger.info(f"Manual check unlocked {len(unlocked)} achievements")
+
+            if unlocked:
+                await message.answer(f"🎉 Разблокировано {len(unlocked)} достижений!")
+                for achievement in unlocked:
+                    await message.answer(f"🏆 {achievement.name}: {achievement.description}")
+            else:
+                await message.answer("Новых достижений не найдено")
+
+            await session.commit()
+
+    except Exception as e:
+        logger.error(f"Error in test_achievements: {e}", exc_info=True)
+        await message.answer("Ошибка при проверке достижений")
+
+
 @router.message(Command("ahelp"), IsAdminFilter())
 async def cmd_help(message: types.Message):
     help_text = """
 ⚡ Команды Админа:
 /users - список пользователей
 /test_reminder - тест напоминаний
+/test_achievements -тест ачивок
 /send_reminders - ручная отправка напоминаний всем пользователям
 /reset_weekly - обнуляет weekly_points у всех пользователей
 /broadcast [сообщение] - массовая рассылка сообщения

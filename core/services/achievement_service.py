@@ -28,6 +28,8 @@ async def check_and_unlock_achievements(
         stmt = select(Achievement)
         achievements = (await session.execute(stmt)).scalars().all()
 
+        logger.info(f"Found {len(achievements)} achievements to check")
+
         unlocked = []
         for achievement in achievements:
             # Проверяем, не разблокировано ли уже достижение
@@ -39,24 +41,36 @@ async def check_and_unlock_achievements(
             )
             exists = (await session.execute(stmt_exists)).scalar_one_or_none()
 
-            if not exists and await is_achievement_unlocked(
-                session=session,
-                user_id=user_id,
-                achievement=achievement,
-                is_correct=is_correct,  # Передаем is_correct
-                task_id=task_id
-            ):
-                # Разблокируем достижение
-                user_achievement = UserAchievement(
+            logger.info(
+                f"Checking achievement '{achievement.name}' (ID: {achievement.id}), already unlocked: {exists is not None}")
+
+            if not exists:
+                is_unlocked = await is_achievement_unlocked(
+                    session=session,
                     user_id=user_id,
-                    achievement_id=achievement.id,
-                    unlocked_at=datetime.utcnow(),
-                    progress=100
+                    achievement=achievement,
+                    is_correct=is_correct,
+                    task_id=task_id
                 )
-                session.add(user_achievement)
-                unlocked.append(achievement)
+
                 logger.info(
-                    f"User {user_id} unlocked achievement {achievement.name}")
+                    f"Achievement '{achievement.name}' unlock status: {is_unlocked}")
+
+                if is_unlocked:
+                    # Разблокируем достижение
+                    user_achievement = UserAchievement(
+                        user_id=user_id,
+                        achievement_id=achievement.id,
+                        unlocked_at=datetime.utcnow(),
+                        progress=100
+                    )
+                    session.add(user_achievement)
+
+                    await add_achievement_reward(session, user_id, achievement.reward_points)
+
+                    unlocked.append(achievement)
+                    logger.info(
+                        f"User {user_id} unlocked achievement {achievement.name}")
 
         return unlocked
 
@@ -64,6 +78,30 @@ async def check_and_unlock_achievements(
         logger.error(
             f"Error in check_and_unlock_achievements: {e}", exc_info=True)
         return []
+
+
+async def add_achievement_reward(session: AsyncSession, user_id: int, reward_points: int):
+    """Начисляет очки за достижение"""
+    try:
+        # Получаем прогресс пользователя
+        user_progress = await session.get(UserProgress, user_id, with_for_update=True)
+        if not user_progress:
+            logger.error(f"UserProgress not found for {user_id}")
+            return
+
+        # Начисляем очки
+        user_progress.total_points += reward_points
+        user_progress.weekly_points += reward_points
+
+        session.add(user_progress)
+        await session.flush()
+
+        logger.info(f"Added {reward_points} reward points to user {user_id}")
+
+    except Exception as e:
+        logger.error(f"Error adding achievement reward: {e}")
+        await session.rollback()
+        raise
 
 
 async def is_achievement_already_unlocked(
@@ -113,7 +151,10 @@ async def is_achievement_unlocked(
         condition = achievement.conditions.lower()
 
         # Разбираем условие по типам
-        if "solved_tasks" in condition:
+        if "solved_tasks" in condition and "topic_id" not in condition and "subtopic_id" not in condition:
+            # Простое условие на количество решенных задач
+            return await check_solved_tasks_condition(session, user_id, condition)
+        elif "solved_tasks" in condition:
             return await check_solved_tasks_condition(session, user_id, condition)
         elif "correct_percentage" in condition:
             return await check_correct_percentage_condition(session, user_id, condition)
@@ -152,7 +193,8 @@ async def check_solved_tasks_condition(
         if not user_stat:
             return False
 
-        solved = user_stat.correct_answers
+        # ИСПРАВЛЕНИЕ: используем total_attempts вместо correct_answers
+        solved = user_stat.total_attempts  # Все попытки, а не только правильные
 
         # Применяем оператор сравнения
         if operator == ">=":
