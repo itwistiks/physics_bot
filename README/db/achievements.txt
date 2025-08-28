@@ -1,0 +1,2 @@
+INSERT INTO `achievements` (`id`, `name`, `description`, `reward_points`, `conditions`, `icon`) VALUES
+(5, 'Новичок', 'Решить первую задачу', 10, 'solved_tasks >= 1', NULL);

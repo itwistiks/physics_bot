@@ -1,0 +1,5 @@
+INSERT INTO `topics` (`id`, `name`, `title_ru`) VALUES
+(1, 'mechanics', 'Механические явления'),
+(2, 'thermodynamics', 'Тепловые явления'),
+(3, 'electricity', 'Электрические явления'),
+(4, 'quantum', 'Квантовые явления');

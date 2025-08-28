@@ -495,6 +495,10 @@ async def tutor_redirect(message: types.Message, state: FSMContext, bot: Bot):
                 types.InlineKeyboardButton(
                     text="Подписка",
                     url="https://cw10005.tw1.ru/"
+                ),
+                types.InlineKeyboardButton(
+                    text="Подписка",
+                    url="https://cw10005.tw1.ru/"
                 )
             ]]
         )

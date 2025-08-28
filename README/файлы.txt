@@ -1,0 +1,4176 @@
+/.env
+BOT_TOKEN=8464313577:AAHQaHhbD3v1jr54cgGX1Gs8k861QdmbRnc
+DB_HOST=c88c805039dfe2949967dd29.twc1.net
+DB_PORT=3306
+DB_USER=gen_user
+DB_PASSWORD=Q0HV7CBTaf7UDX
+DB_NAME=physics_bot
+# DB_FULL_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?ssl=true&ssl_ca=/root/.cloud-certs/root.crt&ssl_verify_cert=true
+# DB_FULL_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?ssl_ca=/root/.cloud-certs/root.crt&ssl_verify_cert=true
+ADMIN_USER_ID=994189833
+LEADS_TOKEN=8435543532:AAGfUkUm2FguwDsdJB5fp5s6U4YaN_oQ9X8
+
+
+
+/start_bot.py
+from core import run_bot
+
+if __name__ == '__main__':
+    run_bot()
+
+
+
+
+config/database.py
+import os
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base
+from dotenv import load_dotenv
+from urllib.parse import quote_plus
+import ssl
+
+load_dotenv()
+
+Base = declarative_base()
+
+# Экранируем пароль
+db_password = os.getenv('DB_PASSWORD')
+escaped_password = quote_plus(db_password)
+
+# URL для aiomysql (БЕЗ SSL параметров в URL!)
+DB_URL = f"mysql+aiomysql://{os.getenv('DB_USER')}:{escaped_password}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
+
+# SSL контекст для aiomysql
+ssl_context = ssl.create_default_context(cafile='/root/.cloud-certs/root.crt')
+ssl_context.check_hostname = False
+
+# Параметры подключения для aiomysql
+connect_args = {
+    "ssl": ssl_context
+}
+
+engine = create_async_engine(
+    DB_URL,
+    echo=True,
+    connect_args=connect_args,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+    pool_recycle=3600
+)
+
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False,
+    autocommit=False
+)
+
+
+
+config/settings.py
+import os
+import ssl
+from os import getenv
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BOT_TOKEN = getenv("BOT_TOKEN")
+DB_URL = f"mysql+aiomysql://{getenv('DB_USER')}:{getenv('DB_PASSWORD')}@{getenv('DB_HOST')}/{getenv('DB_NAME')}"
+
+# Для отправки сообщений в поддержку
+ADMIN_USER_ID = int(getenv('ADMIN_USER_ID'))
+LEADS_TOKEN = getenv('LEADS_TOKEN')
+
+
+# Настройки напоминаний
+REMINDER_INTERVAL_MINUTES = 4320  # Интервал проверки
+# Минимальный интервал между напоминаниями одному пользователю (в минутах)
+MIN_REMINDER_GAP = 30
+
+
+
+core/database/models.py
+from sqlalchemy import Column, Integer, String, ForeignKey, Enum, JSON, Text, DateTime, Date, Float, Boolean
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship
+from enum import Enum as PyEnum
+import datetime
+
+Base = declarative_base()
+
+
+# Enums для сложности и статусов
+
+
+class Complexity(PyEnum):
+    BASIC = 'basic'
+    ADVANCED = 'advanced'
+    HIGH = 'high'
+
+
+class UserStatus(PyEnum):
+    NO_SUB = 'no_sub'
+    SUB = 'sub'
+    PRO_SUB = 'pro_sub'
+    TEACHER = 'teacher'
+    MODERATOR = 'moderator'
+    ADMIN = 'admin'
+
+
+class PartNumber(PyEnum):
+    PART_ONE = 'part_one'
+    PART_TWO = 'part_two'
+
+
+class ReminderType(PyEnum):
+    INACTIVE = 'inactive'
+    HOLIDAY = 'holiday'
+    PROMO = 'promo'
+
+
+# Модели для задач и теории
+
+
+class Topic(Base):
+    __tablename__ = 'topics'
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50), unique=True)  # Английское название (для кода)
+    title_ru = Column(String(100))  # Русское название
+
+    subtopics = relationship("Subtopic", back_populates="topic")
+    tasks = relationship("Task", back_populates="topic")
+    theories = relationship("Theory", back_populates="topic")
+
+
+class Subtopic(Base):
+    __tablename__ = 'subtopics'
+    id = Column(Integer, primary_key=True)
+    topic_id = Column(Integer, ForeignKey('topics.id'))
+    name = Column(String(50))
+    title_ru = Column(String(100))
+
+    topic = relationship("Topic", back_populates="subtopics")
+    tasks = relationship("Task", back_populates="subtopic")
+    theories = relationship("Theory", back_populates="subtopic")
+
+
+class Task(Base):
+    __tablename__ = 'tasks'
+    id = Column(Integer, primary_key=True)
+    type_number = Column(Integer)  # Номер типа задания в ОГЭ (1-25)
+    topic_id = Column(Integer, ForeignKey('topics.id'))
+    subtopic_id = Column(Integer, ForeignKey('subtopics.id'), nullable=True)
+    part_number = Column(Enum(PartNumber))  # Первая или вторая часть
+    complexity = Column(Enum(Complexity))
+    task_content = Column(JSON)  # {"text": "...", "image": "url"}
+    correct_answer = Column(Text)
+    answer_options = Column(JSON)  # ["Вариант 1", "Вариант 2"]
+    theory_id = Column(Integer, ForeignKey('theories.id'), nullable=True)
+    video_analysis_url = Column(String(255), nullable=True)
+
+    topic = relationship("Topic", back_populates="tasks")
+    subtopic = relationship("Subtopic", back_populates="tasks")
+    theory = relationship("Theory", back_populates="tasks")
+
+
+class Theory(Base):
+    __tablename__ = 'theories'
+    id = Column(Integer, primary_key=True)
+    topic_id = Column(Integer, ForeignKey('topics.id'))
+    subtopic_id = Column(Integer, ForeignKey('subtopics.id'), nullable=True)
+    complexity = Column(Enum(Complexity))
+    content = Column(Text)  # Markdown
+    examples = Column(JSON)  # [{"task": "...", "solution": "..."}]
+
+    topic = relationship("Topic", back_populates="theories")
+    subtopic = relationship("Subtopic", back_populates="theories")
+    tasks = relationship("Task", back_populates="theory")
+
+
+# Модели пользователей
+
+
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    username = Column(String(50), nullable=True)
+    registration_date = Column(DateTime, default=datetime.datetime.utcnow)
+    status = Column(Enum(UserStatus), default=UserStatus.NO_SUB)
+    phone = Column(String(20), nullable=True)
+    city = Column(String(50), nullable=True)
+    last_interaction_time = Column(DateTime)  # Когда последний раз был активен
+    # Когда последний раз отправляли напоминание
+    last_reminder_time = Column(DateTime, nullable=True)
+
+    stats = relationship("UserStat", back_populates="user")
+    progress = relationship(
+        "UserProgress", back_populates="user", uselist=False)
+    achievements = relationship("UserAchievement", back_populates="user")
+    weekly_xp = relationship("WeeklyXP", back_populates="user")
+
+
+class UserStat(Base):
+    __tablename__ = 'user_stats'
+
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    # {"subtopic_id": {"correct": X, "wrong": Y}}
+    subtopics_stats = Column(JSON, default={})
+    correct_answers = Column(Integer, default=0)
+    total_attempts = Column(Integer, default=0)
+    percentage = Column(Float, default=0.0)
+
+    user = relationship("User", back_populates="stats")
+
+
+class UserProgress(Base):
+    __tablename__ = 'user_progress'
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    daily_record = Column(Integer, default=0)
+    weekly_points = Column(Integer, default=0)
+    total_points = Column(Integer, default=0)
+    current_streak = Column(Integer, default=0)
+    last_active_day = Column(Date)
+
+    user = relationship("User", back_populates="progress")
+
+
+class UserAchievement(Base):
+    __tablename__ = 'user_achievements'
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    achievement_id = Column(Integer, ForeignKey(
+        'achievements.id'), primary_key=True)
+    unlocked_at = Column(DateTime, nullable=True)
+    progress = Column(Integer, default=0)
+
+    user = relationship("User", back_populates="achievements")
+    achievement = relationship(
+        "Achievement", back_populates="user_achievements")
+
+
+class WeeklyXP(Base):
+    __tablename__ = 'weekly_xp'
+
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    week_start_date = Column(Date)  # Дата начала недели (понедельник)
+    xp_earned = Column(Integer, default=0)
+
+    user = relationship("User", back_populates="weekly_xp")
+
+
+# Достижения и напоминания
+
+
+class Achievement(Base):
+    __tablename__ = 'achievements'
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100))
+    description = Column(Text)
+    reward_points = Column(Integer)
+    conditions = Column(Text)  # Логика проверки
+    icon = Column(String(255))  # URL иконки
+
+    user_achievements = relationship(
+        "UserAchievement", back_populates="achievement")
+
+
+class Reminder(Base):
+    __tablename__ = 'reminders'
+    id = Column(Integer, primary_key=True)
+    date = Column(Date)
+    reminder_type = Column(Enum(ReminderType))
+    text = Column(Text)
+
+
+
+core/filters/adminpy
+from aiogram.filters import BaseFilter
+from aiogram.types import Message
+from sqlalchemy import select
+from config.database import AsyncSessionLocal
+from core.database.models import User, UserStatus
+
+
+class IsTeacherFilter(BaseFilter):
+    async def __call__(self, message: Message) -> bool:
+        async with AsyncSessionLocal() as session:
+            user = await session.scalar(
+                select(User)
+                .where(User.id == message.from_user.id)
+            )
+
+            return user is not None and (user.status == UserStatus.ADMIN or user.status == UserStatus.MODERATOR or user.status == UserStatus.TEACHER)
+
+
+class IsModeratorFilter(BaseFilter):
+    async def __call__(self, message: Message) -> bool:
+        async with AsyncSessionLocal() as session:
+            user = await session.scalar(
+                select(User)
+                .where(User.id == message.from_user.id)
+            )
+
+            return user is not None and (user.status == UserStatus.ADMIN or user.status == UserStatus.MODERATOR)
+
+
+class IsAdminFilter(BaseFilter):
+    async def __call__(self, message: Message) -> bool:
+        async with AsyncSessionLocal() as session:
+            user = await session.scalar(
+                select(User)
+                .where(User.id == message.from_user.id)
+            )
+
+            return user is not None and (user.status == UserStatus.ADMIN)
+
+
+
+core/handlers/__init__.py
+from .common import router as common_router
+from .inline_handlers import router as inline_router
+from .reply_handlers import router as reply_router
+from .teacher import router as teacher_router      # Сначала специфичные
+from .moderator import router as moderator_router  # Потом модератор
+from .admin import router as admin_router          # Админ последним
+
+routers = [
+    common_router,    # Базовые команды (/start, /help)
+    inline_router,    # Inline-обработчики
+    reply_router,     # Reply-обработчики
+    teacher_router,   # Команды преподавателя
+    moderator_router,  # Команды модератора
+    admin_router      # Команды админа (последние!)
+]
+
+__all__ = ['routers']
+
+
+
+core/handlers/admin.py
+from aiogram import Router, types, Bot
+from aiogram.filters import Command
+from aiogram.types import Message
+from aiogram.fsm.context import Bot
+from aiogram.fsm.context import FSMContext
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.filters import Text
+from core.fsm.states import AdminStates
+from aiogram.filters import StateFilter
+
+from sqlalchemy import select, func, text
+
+from core.services.reminder_service import ReminderService, send_inactivity_reminders
+from core.filters.admin import IsAdminFilter
+from core.database.models import (
+    User,
+    UserStat,
+    Topic,
+    Task,
+    UserProgress,
+    UserAchievement,
+    Achievement
+)
+
+from core.services.stats_service import reset_all_weekly_points
+
+from config.database import AsyncSessionLocal
+
+import logging
+
+
+logger = logging.getLogger(__name__)
+
+
+router = Router()
+
+
+@router.message(Command("users"), IsAdminFilter())
+async def cmd_users(message: types.Message):
+    """Список всех пользователей"""
+    async with AsyncSessionLocal() as session:
+        users = await session.scalars(
+            select(User).order_by(User.registration_date.desc())
+        )
+
+        user_list = []
+        for user in users:
+            status_emoji = {
+                'no_sub': '🔴', 'sub': '🟢', 'pro_sub': '🔵',
+                'teacher': '👨‍🏫', 'moderator': '🔧', 'admin': '⚡'
+            }.get(user.status.value, '⚪')
+
+            user_list.append(
+                f"{status_emoji} {user.id} | @{user.username or 'нет'} | "
+                f"{user.status.value} | {user.registration_date.strftime('%d.%m.%Y')}"
+            )
+
+        # Разбиваем на сообщения по 20 пользователей
+        for i in range(0, len(user_list), 20):
+            await message.answer("\n".join(user_list[i:i+20]))
+
+
+@router.message(Command("test_reminder"), IsAdminFilter())
+async def test_reminder(message: types.Message, bot: Bot):  # Добавьте bot в параметры
+    """Тест напоминаний"""
+    try:
+        await send_inactivity_reminders(bot)  # Передаем bot напрямую
+        await message.answer("Напоминания отправлены")
+    except Exception as e:
+        await message.answer(f"Ошибка: {str(e)}")
+
+
+@router.message(Command("send_reminders"), IsAdminFilter())
+async def cmd_send_reminders(message: types.Message, bot: Bot):
+    """Ручная отправка напоминаний всем пользователям"""
+    try:
+        service = ReminderService(bot)
+        results = await service.send_reminders()
+
+        await message.answer(
+            "🔔 Напоминания отправлены:\n"
+            f"• PROMO: {results.get('promo', 0)} пользователям\n"
+            f"• INACTIVE: {results.get('inactive', 0)} пользователям\n\n"
+            f"Следующая автоматическая проверка через {service.check_interval//3600} ч"
+        )
+    except Exception as e:
+        logger.error(f"Error in send_reminders: {e}")
+        await message.answer("⚠️ Ошибка при отправке напоминаний")
+
+
+@router.message(Command("reset_weekly"), IsAdminFilter())
+async def confirm_reset_weekly(message: types.Message, state: FSMContext):
+    """Запрашивает подтверждение обнуления weekly points"""
+    confirm_kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ Да, обнулить")],
+            [KeyboardButton(text="❌ Отмена")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+    await message.answer(
+        "⚠️ Вы уверены, что хотите обнулить weekly points всем пользователям?",
+        reply_markup=confirm_kb
+    )
+    await state.set_state(AdminStates.CONFIRM_WEEKLY_RESET)
+
+
+@router.message(
+    Text("✅ Да, обнулить"),
+    StateFilter(AdminStates.CONFIRM_WEEKLY_RESET),
+    IsAdminFilter()
+)
+async def execute_reset_weekly(message: types.Message, state: FSMContext):
+    """Выполняет обнуление weekly points после подтверждения"""
+    async with AsyncSessionLocal() as session:
+        try:
+            count = await reset_all_weekly_points(session)
+            await message.answer(
+                f"♻️ Weekly points обнулены для {count} пользователей",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+        except Exception as e:
+            logger.error(f"Error in reset_weekly: {e}")
+            await message.answer(
+                "⚠️ Ошибка при обнулении weekly points",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+        finally:
+            await state.clear()
+
+
+@router.message(
+    Text("❌ Отмена"),
+    StateFilter(AdminStates.CONFIRM_WEEKLY_RESET),
+    IsAdminFilter()
+)
+async def cancel_reset_weekly(message: types.Message, state: FSMContext):
+    """Отменяет операцию обнуления"""
+    await message.answer(
+        "❌ Обнуление weekly points отменено",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
+    await state.clear()
+
+
+@router.message(Command("broadcast"), IsAdminFilter())
+async def cmd_broadcast(message: types.Message, bot: Bot):  # Правильный тип
+    """Массовая рассылка сообщения всем пользователям"""
+    try:
+        # Извлекаем текст рассылки
+        if len(message.text.split()) < 2:
+            await message.answer("❌ Использование: /broadcast <текст сообщения>")
+            return
+
+        broadcast_text = message.text.split(' ', 1)[1]
+
+        async with AsyncSessionLocal() as session:
+            # Получаем всех пользователей
+            users = await session.scalars(select(User))
+
+            success = 0
+            failed = 0
+            failed_users = []
+
+            # Отправляем сообщение каждому пользователю
+            for user in users:
+                try:
+                    await bot.send_message(
+                        user.id,
+                        f"📢 Сообщение от администратора:\n\n{broadcast_text}"
+                    )
+                    success += 1
+                except Exception as e:
+                    failed += 1
+                    failed_users.append(
+                        f"{user.id} (@{user.username or 'нет'})")
+                    # Логируем ошибку для диагностики
+                    print(
+                        f"Не удалось отправить пользователю {user.id}: {str(e)}")
+
+            # Формируем отчет
+            report = (
+                f"✅ Рассылка завершена:\n"
+                f"✔️ Успешно: {success}\n"
+                f"❌ Не удалось: {failed}"
+            )
+
+            # Добавляем список неудавшихся, если их немного
+            if failed_users and len(failed_users) <= 10:
+                report += f"\n\nНе удалось отправить:\n" + \
+                    "\n".join(failed_users[:10])
+            elif failed > 0:
+                report += f"\n\nНе удалось отправить {failed} пользователям"
+
+            await message.answer(report)
+
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при рассылке: {str(e)}")
+
+
+@router.message(Command("ahelp"), IsAdminFilter())
+async def cmd_help(message: types.Message):
+    help_text = """
+⚡ Команды Админа:
+/users - список пользователей
+/test_reminder - тест напоминаний
+/send_reminders - ручная отправка напоминаний всем пользователям
+/reset_weekly - обнуляет weekly_points у всех пользователей
+/broadcast [сообщение] - массовая рассылка сообщения
+
+🔧 Команды модератора:
+/active_users - Самые активные пользователи
+/top_users - Топ 10 по общему XP
+/top_weekly_users - Топ 10 за неделю
+
+👨‍🏫 Команды преподавателя:
+/student_progress [@username] - Прогресс студента
+/send_feedback [@username] [message] - Отправить feedback
+"""
+    await message.answer(help_text, parse_mode="HTML")
+
+
+
+core/handlers/common.py
+from aiogram import Router, types, Bot
+from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+from aiogram.filters import Command
+from core.services.user_service import get_or_create_user
+from config.database import AsyncSessionLocal
+from core.keyboards.reply import main_menu_kb
+from sqlalchemy import select
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+router = Router()
+
+
+# @router.message(~Command(commands=["start", "help"]))
+# async def handle_non_command(message: types.Message):
+#     await message.answer(
+#         "👋 Привет! Я бот для подготовки к ОГЭ по физике.\n"
+#         "Нажми /start чтобы начать или /help для списка команд.\n\n"
+#         "Я помогу:\n"
+#         "✅ Решать задачи разных типов\n"
+#         "✅ Изучать теорию\n"
+#         "✅ Следить за прогрессом\n"
+#         "✅ Готовиться к экзамену системно"
+#     )
+
+
+@router.message(Command("start"))
+async def cmd_start(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    menu_message_id = data.get('menu_message_id')
+    task_message_id = data.get('task_message_id')
+
+    if menu_message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=menu_message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Неудалось удалить сообщение: {e}")
+
+    if task_message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=task_message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Неудалось удалить сообщение: {e}")
+
+    async with AsyncSessionLocal() as session:
+        # Получаем или создаем пользователя
+        user = await get_or_create_user(
+            session=session,
+            user_id=message.from_user.id,
+            username=message.from_user.username
+        )
+
+    await message.answer(
+        "📚 Привет! Я помогу подготовиться к ОГЭ по физике на 5! \nВыбери действие",
+        reply_markup=main_menu_kb()
+    )
+
+
+# Добавьте в core/handlers/common.py
+@router.message(Command("help"))
+async def cmd_help(message: types.Message):
+    help_text = """
+📚 <b>Помощь по боту</b>:
+
+/start - Начать работу с ботом
+
+<b>Основные функции</b>:
+✏️ Практика - Решение задач по темам
+📊 Статистика - Ваш прогресс и достижения
+📖 Теория - Теоретические материалы
+
+<b>Типы заданий</b>:
+📋 Первая часть - Задания с выбором ответа
+📘 Вторая часть - Задания с развернутым ответом
+🔥 Сложные задачи - Задания повышенной сложности
+
+По всем вопросам/предложениям доступна ✉️ Поддержка
+"""
+    await message.answer(help_text, parse_mode="HTML")
+
+
+
+core/handlers/inline_handlers.py
+from aiogram import Router, F, Bot
+from aiogram.types import Message, CallbackQuery, InputMediaPhoto
+from aiogram.filters import Text, StateFilter
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+from sqlalchemy import select, and_, func
+from sqlalchemy.orm import selectinload
+import random
+
+from config.database import AsyncSessionLocal
+from core.database.models import Task, Theory, PartNumber, Complexity, Achievement
+from core.services.task_display import display_task
+
+from ..keyboards.inline import (
+    part_one_types_kb,
+    answer_options_kb,
+    theory_solution_kb,
+    achievements_button
+)
+from ..keyboards.reply import (
+    practice_menu_kb,
+    task_navigation_kb
+)
+
+from core.services.task_display import display_task, display_task_by_id
+from core.services.task_utils import get_shuffled_task_ids
+# from core.services.answer_processing import process_answer
+from core.services.answer_checker import check_answer
+
+from core.utils.debounce import throttle
+
+import logging
+
+
+logger = logging.getLogger(__name__)
+
+
+router = Router()
+
+# Состояния для FSM
+
+
+class TaskStates(StatesGroup):
+    WAITING_ANSWER = State()
+    SHOWING_RESULT = State()
+
+
+@router.callback_query(F.data == "show_achievements")
+async def show_achievements_handler(callback: CallbackQuery):
+    """Обработчик кнопки просмотра достижений"""
+    try:
+        async with AsyncSessionLocal() as session:
+            # Получаем все достижения пользователя
+            from core.services.achievement_service import get_user_achievements
+            achievements = await get_user_achievements(session, callback.from_user.id)
+
+            if not achievements:
+                await callback.answer("У вас пока нет достижений", show_alert=True)
+                return
+
+            # Формируем текст сообщения
+            message_text = "🏆 Ваши достижения:\n\n"
+            for ua, achievement in achievements:
+                date_str = ua.unlocked_at.strftime(
+                    "%d.%m.%Y") if ua.unlocked_at else "Еще не получено"
+                message_text += (
+                    f"🔹 {achievement.name}\n"
+                    f"📝 {achievement.description}\n"
+                    f"📅 Получено: {date_str}\n\n"
+                )
+
+            # Получаем общее количество достижений
+            total_achievements = await session.scalar(select(func.count(Achievement.id)))
+            unlocked_count = len(achievements)
+            message_text += f"🔓 {unlocked_count}/{total_achievements} достижений разблокировано"
+
+            await callback.message.answer(message_text)
+            await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in achievements handler: {e}")
+        await callback.answer(
+            "⏳ Произошла ошибка при загрузке достижений",
+            show_alert=True
+        )
+
+
+@router.callback_query(F.data.startswith("part_one:"))
+@throttle(2.0)
+async def handle_task_type(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    try:
+        # Удаляем сообщение с кнопками выбора типа
+        try:
+            await bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id
+            )
+        except Exception as e:
+            logger.warning(f"Could not delete message: {e}")
+
+        task_type = int(callback.data.split(":")[1])
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(Task.id).where(
+                and_(
+                    Task.type_number == task_type,
+                    Task.part_number == PartNumber.PART_ONE
+                )
+            )
+            result = await session.execute(stmt)
+            task_ids = [row[0] for row in result.all()]
+
+        if not task_ids:
+            await callback.answer("Задания этого типа не найдены", show_alert=True)
+            return
+
+        random.shuffle(task_ids)
+
+        await state.update_data(
+            TASK_LIST=task_ids,
+            CURRENT_INDEX=0,
+            IS_RANDOM_SESSION=False,
+            CURRENT_TASK_TYPE=task_type,
+            CURRENT_PART=PartNumber.PART_ONE
+        )
+
+        await display_task_by_id(callback.message, task_ids[0], state)
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in handle_part_two_task_type: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка при загрузке заданий", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("part_two:"))
+@throttle(2.0)
+async def handle_part_two_task_type(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    try:
+        # Удаляем сообщение с кнопками выбора типа
+        try:
+            await bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id
+            )
+        except Exception as e:
+            logger.warning(f"Could not delete message: {e}")
+
+        task_type = int(callback.data.split(":")[1])
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(Task.id).where(
+                and_(
+                    Task.type_number == task_type,
+                    Task.part_number == PartNumber.PART_TWO
+                )
+            )
+            result = await session.execute(stmt)
+            task_ids = [row[0] for row in result.all()]
+
+        if not task_ids:
+            await callback.answer("Задания этого типа не найдены", show_alert=True)
+            return
+
+        random.shuffle(task_ids)
+
+        await state.update_data(
+            TASK_LIST=task_ids,
+            CURRENT_INDEX=0,
+            IS_RANDOM_SESSION=False,
+            CURRENT_TASK_TYPE=task_type,
+            CURRENT_PART=PartNumber.PART_TWO
+        )
+
+        await display_task_by_id(callback.message, task_ids[0], state)
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in handle_part_two_task_type: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка при загрузке заданий", show_alert=True)
+
+
+async def show_random_task(message: Message, task_type: int, state: FSMContext):
+    try:
+        async with AsyncSessionLocal() as session:
+            stmt = select(Task).where(
+                Task.type_number == task_type
+            ).options(selectinload(Task.topic))
+
+            tasks = (await session.execute(stmt)).scalars().all()
+
+            if not tasks:
+                await message.answer("Задания этого типа не найдены")
+                return
+
+            task = random.choice(tasks)
+            await state.update_data(current_task_id=task.id)
+            await display_task(message, task, state)
+    except Exception as e:
+        await message.answer(f"Ошибка при загрузке задания: {e}")
+        print(f"Ошибка: {e}")
+
+
+@router.callback_query(F.data.startswith("subtopic:"))
+@throttle(2.0)
+async def handle_subtopic_selection(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    try:
+        # Удаляем сообщение с кнопками выбора типа
+        try:
+            await bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id
+            )
+        except Exception as e:
+            logger.warning(f"Could not delete message: {e}")
+
+        subtopic_id = int(callback.data.split(":")[1])
+
+        # Получаем все задания для выбранной подтемы
+        async with AsyncSessionLocal() as session:
+            stmt = select(Task.id).where(
+                Task.subtopic_id == subtopic_id
+            )
+            result = await session.execute(stmt)
+            task_ids = [row[0] for row in result.all()]
+
+        if not task_ids:
+            await callback.answer("Задания по этой теме не найдены", show_alert=True)
+            return
+
+        # Перемешиваем задания
+        random.shuffle(task_ids)
+
+        await state.update_data(
+            TASK_LIST=task_ids,
+            CURRENT_INDEX=0,
+            IS_RANDOM_SESSION=False,
+            CURRENT_SUBTOPIC_ID=subtopic_id
+        )
+
+        # Отображаем первое задание
+        await display_task_by_id(callback.message, task_ids[0], state)
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in handle_subtopic_selection: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка при загрузке заданий", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("difficult_subtopic:"))
+@throttle(2.0)
+async def handle_difficult_subtopic_selection(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    try:
+        # Удаляем сообщение с кнопками выбора типа
+        try:
+            await bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id
+            )
+        except Exception as e:
+            logger.warning(f"Could not delete message: {e}")
+
+        subtopic_id = int(callback.data.split(":")[1])
+
+        # Получаем только сложные задания для выбранной подтемы
+        async with AsyncSessionLocal() as session:
+            stmt = select(Task.id).where(
+                and_(
+                    Task.subtopic_id == subtopic_id,
+                    Task.complexity == Complexity.HIGH
+                )
+            )
+            result = await session.execute(stmt)
+            task_ids = [row[0] for row in result.all()]
+
+        if not task_ids:
+            await callback.answer("Сложные задания по этой теме не найдены", show_alert=True)
+            return
+
+        # Перемешиваем задания
+        random.shuffle(task_ids)
+
+        await state.update_data(
+            TASK_LIST=task_ids,
+            CURRENT_INDEX=0,
+            IS_RANDOM_SESSION=False,
+            CURRENT_SUBTOPIC_ID=subtopic_id,
+            IS_DIFFICULT_SESSION=True  # Флаг сложной сессии
+        )
+
+        # Отображаем первое задание
+        await display_task_by_id(callback.message, task_ids[0], state)
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(
+            f"Error in handle_difficult_subtopic_selection: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка при загрузке сложных заданий", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("answer:"))
+async def handle_button_answer(callback: CallbackQuery, state: FSMContext):
+    try:
+        current_state = await state.get_state()
+        if current_state != TaskStates.WAITING_ANSWER.state:
+            await callback.answer("Это задание уже проверено", show_alert=True)
+            return
+
+        _, task_id, answer_idx = callback.data.split(":")
+        task_id = int(task_id)
+        answer_idx = int(answer_idx)
+
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                task = await session.get(Task, task_id, with_for_update=True)
+                if not task:
+                    await callback.answer("Задание не найдено", show_alert=True)
+                    return
+
+                # Проверяем ответ
+                from core.services.task_service import check_answer
+                result = await check_answer(
+                    session=session,
+                    task_id=task_id,
+                    user_answer=task.answer_options[answer_idx],
+                    user_id=callback.from_user.id,
+                    state=state
+                )
+
+                if not result["success"]:
+                    await callback.answer("Ошибка при проверке ответа", show_alert=True)
+                    return
+
+                # Отправляем результат - ИСПРАВЛЕНО использование result
+                await state.set_state(TaskStates.SHOWING_RESULT)
+                await callback.answer()
+                await callback.message.answer(
+                    f"{'✅ Правильно!' if result['is_correct'] else '❌ Неверно!'}",
+                    reply_markup=theory_solution_kb(
+                        result['task_id'],  # Используем task_id из результата
+                        # Используем complexity из результата
+                        result['complexity']
+                    )
+                )
+
+    except Exception as e:
+        logger.error(f"Error in handle_button_answer: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка при проверке ответа", show_alert=True)
+
+
+# -------------| Обработчики inline-кнопок после задачи |------------- #
+
+
+# Обработчик теории
+
+
+@router.callback_query(F.data.startswith("theory:"))
+async def show_theory(callback: CallbackQuery):
+    task_id = int(callback.data.split(":")[1])
+
+    async with AsyncSessionLocal() as session:
+        try:
+            async with session.begin():  # Явное управление транзакцией
+                stmt = select(Task).where(Task.id == task_id).options(
+                    selectinload(Task.theory).selectinload(Theory.topic)
+                )
+                task = (await session.execute(stmt)).scalar_one_or_none()
+
+                if not task:
+                    await callback.answer("⚠️ Задание не найдено", show_alert=True)
+                    return  # Транзакция завершится автоматически
+
+                if not task.theory:
+                    await callback.answer("⚠️ Теория отсутствует", show_alert=True)
+                    return
+
+                topic_name = task.theory.topic.title_ru if task.theory.topic else "Без темы"
+                theory_text = (
+                    f"📚 Теория по заданию {task.type_number}\n"
+                    f"Тема: {topic_name}\n\n"
+                    f"{task.theory.content}"
+                )
+
+                try:
+                    # Пытаемся отправить с Markdown разметкой
+                    await callback.message.answer(theory_text, parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"HTML error: {e}")
+                    try:
+                        # Если Markdown не работает, пробуем HTML
+                        await callback.message.answer(theory_text, parse_mode="Markdown")
+                    except Exception as e2:
+                        logger.error(f"Markdown error: {e2}")
+                        # Если ничего не работает, отправляем без форматирования
+                        await callback.message.answer(theory_text)
+
+                # Транзакция закоммитится автоматически при выходе из блока
+
+        except Exception as e:
+            logger.error(f"Database error: {e}", exc_info=True)
+            await callback.answer("⚠️ Ошибка загрузки теории", show_alert=True)
+        finally:
+            await callback.answer()  # Всегда отвечаем на callback
+
+
+# Обработчик разбора
+
+
+@router.callback_query(F.data.startswith("solution:"))
+async def handle_solution(callback: CallbackQuery):
+    try:
+        task_id = int(callback.data.split(":")[1])
+
+        async with AsyncSessionLocal() as session:
+            # Явно начинаем транзакцию
+            async with session.begin():
+                # Получаем задачу с блокировкой для чтения
+                task = await session.execute(
+                    select(Task)
+                    .where(Task.id == task_id)
+                    .with_for_update(read=True)
+                )
+                task = task.scalar_one_or_none()
+
+                if not task:
+                    await callback.answer("⚠️ Задача не найдена", show_alert=True)
+                    return
+
+                if not task.video_analysis_url:
+                    await callback.answer("Видеоразбор отсутствует, но мы занимаемся его созданием 🎥", show_alert=True)
+                    return
+
+                # Отправляем сообщение с видеоразбором
+                await callback.message.answer(
+                    f"🎥 Видеоразбор к задаче {task.type_number}:\n"
+                    f"{task.video_analysis_url}"
+                )
+
+        # Убираем уведомление "загрузка" у кнопки
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка в handle_solution: {e}", exc_info=True)
+        await callback.answer("⚠️ Ошибка загрузки видеоразбора", show_alert=True)
+
+
+
+core/handlers/moderator.py
+from aiogram import Router, types, Bot
+from aiogram.filters import Command
+from aiogram.types import Message
+from sqlalchemy import select, func, desc
+from datetime import datetime, timedelta
+
+from core.filters.admin import IsModeratorFilter
+from core.database.models import User, UserProgress
+from config.database import AsyncSessionLocal
+
+router = Router()
+
+
+@router.message(Command("active_users"), IsModeratorFilter())
+async def cmd_active_users(message: types.Message):
+    """Самые активные пользователи за последние 7 дней"""
+    try:
+        async with AsyncSessionLocal() as session:
+            week_ago = datetime.now() - timedelta(days=7)
+
+            # Пользователи с наибольшей активностью
+            active_users = await session.execute(
+                select(User, UserProgress.weekly_points)
+                .join(UserProgress, User.id == UserProgress.user_id)
+                .where(User.last_interaction_time >= week_ago)
+                .order_by(desc(UserProgress.weekly_points))
+                .limit(15)
+            )
+
+            if not active_users:
+                await message.answer("📊 Нет активных пользователей за последнюю неделю")
+                return
+
+            result = ["🏆 Самые активные пользователи (неделя):\n"]
+            for i, (user, weekly_points) in enumerate(active_users, 1):
+                result.append(
+                    f"{i}. @{user.username or 'Без username'} (ID: {user.id})\n"
+                    f"   ⚡ XP за неделю: {weekly_points}\n"
+                    f"   📅 Последняя активность: {user.last_interaction_time.strftime('%d.%m.%Y %H:%M')}"
+                )
+
+            # Разбиваем на сообщения если слишком длинное
+            text = "\n".join(result)
+            if len(text) > 4000:
+                for i in range(0, len(text), 4000):
+                    await message.answer(text[i:i+4000])
+            else:
+                await message.answer(text)
+
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {str(e)}")
+
+
+@router.message(Command("top_users"), IsModeratorFilter())
+async def cmd_top_users(message: types.Message):
+    """Топ 10 пользователей по общему XP"""
+    try:
+        async with AsyncSessionLocal() as session:
+            top_users = await session.execute(
+                select(User, UserProgress.total_points)
+                .join(UserProgress, User.id == UserProgress.user_id)
+                .order_by(desc(UserProgress.total_points))
+                .limit(10)
+            )
+
+            if not top_users:
+                await message.answer("📊 Нет данных о пользователях")
+                return
+
+            result = ["🏆 Топ 10 пользователей по XP:\n"]
+            for i, (user, total_points) in enumerate(top_users, 1):
+                result.append(
+                    f"{i}. @{user.username or 'Без username'} (ID: {user.id})\n"
+                    f"   ⚡ Всего XP: {total_points}\n"
+                    f"   🎯 Статус: {user.status.value}"
+                )
+
+            await message.answer("\n".join(result))
+
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {str(e)}")
+
+
+@router.message(Command("top_weekly_users"), IsModeratorFilter())
+async def cmd_top_weekly_users(message: types.Message):
+    """Топ 10 пользователей по XP за неделю"""
+    try:
+        async with AsyncSessionLocal() as session:
+            top_users = await session.execute(
+                select(User, UserProgress.weekly_points)
+                .join(UserProgress, User.id == UserProgress.user_id)
+                .order_by(desc(UserProgress.weekly_points))
+                .limit(10)
+            )
+
+            if not top_users:
+                await message.answer("📊 Нет данных за неделю")
+                return
+
+            result = ["🏆 Топ 10 пользователей за неделю:\n"]
+            for i, (user, weekly_points) in enumerate(top_users, 1):
+                result.append(
+                    f"{i}. @{user.username or 'Без username'} (ID: {user.id})\n"
+                    f"   ⚡ XP за неделю: {weekly_points}\n"
+                    f"   🎯 Статус: {user.status.value}"
+                )
+
+            await message.answer("\n".join(result))
+
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {str(e)}")
+
+
+@router.message(Command("mhelp"), IsModeratorFilter())
+async def cmd_mhelp(message: types.Message):
+    """Помощь по командам модератора"""
+    help_text = (
+        "🔧 Команды модератора:\n\n"
+        "📊 Статистика:\n"
+        "/active_users - Самые активные пользователи\n"
+        "/top_users - Топ 10 по общему XP\n"
+        "/top_weekly_users - Топ 10 за неделю\n\n"
+
+        "👨‍🏫 Команды преподавателя:\n"
+        "/student_progress [@username] - Прогресс студента\n"
+        "/send_feedback [@username] [message] - Отправить feedback\n"
+    )
+    await message.answer(help_text)
+
+
+
+core/handlers/teacher.py
+from aiogram import Router, types, Bot
+from aiogram.filters import Command
+from aiogram.types import Message
+from sqlalchemy import select
+
+from core.filters.admin import IsTeacherFilter
+from core.database.models import User, UserStat, UserProgress
+from config.database import AsyncSessionLocal
+
+router = Router()
+
+
+@router.message(Command("student_progress"), IsTeacherFilter())
+async def cmd_student_progress(message: types.Message):
+    """Прогресс конкретного студента по username"""
+    try:
+        # Извлекаем username из команды
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.answer("❌ Использование: /student_progress @username")
+            return
+
+        # Убираем @ и приводим к нижнему регистру
+        username_search = parts[1].lstrip('@').lower()
+
+        async with AsyncSessionLocal() as session:
+            # Ищем пользователя по части username
+            users = await session.scalars(
+                select(User).where(User.username.ilike(f"%{username_search}%"))
+            )
+
+            users_list = list(users)
+
+            if not users_list:
+                await message.answer("❌ Пользователь с таким username не найден")
+                return
+
+            if len(users_list) > 1:
+                # Если найдено несколько пользователей
+                user_list_text = "Найдено несколько пользователей:\n"
+                for i, user in enumerate(users_list[:10], 1):
+                    user_list_text += f"{i}. @{user.username} (ID: {user.id})\n"
+
+                if len(users_list) > 10:
+                    user_list_text += f"\n... и еще {len(users_list) - 10} пользователей"
+
+                user_list_text += "\n\nУточните username"
+                await message.answer(user_list_text)
+                return
+
+            # Если найден один пользователь
+            user = users_list[0]
+            stats = await session.get(UserStat, user.id)
+            progress = await session.get(UserProgress, user.id)
+
+            # Рассчитываем точность
+            accuracy = 0
+            if stats and stats.total_attempts > 0:
+                accuracy = (stats.correct_answers / stats.total_attempts) * 100
+
+            progress_text = (
+                f"📊 Прогресс студента:\n"
+                f"👤 ID: {user.id}\n"
+                f"📛 Username: @{user.username or 'нет'}\n"
+                f"🎯 Статус: {user.status.value}\n\n"
+                f"📈 Статистика:\n"
+                f"✅ Решено задач: {stats.total_attempts if stats else 0}\n"
+                f"✔️ Правильных: {stats.correct_answers if stats else 0}\n"
+                f"🎯 Точность: {accuracy:.1f}%\n\n"
+                f"⚡ Прогресс:\n"
+                f"💎 Всего XP: {progress.total_points if progress else 0}\n"
+                f"📅 За неделю: {progress.weekly_points if progress else 0}\n"
+                f"🔥 Серия дней: {progress.current_streak if progress else 0}\n"
+                f"⏰ Последняя активность: {user.last_interaction_time.strftime('%d.%m.%Y %H:%M') if user.last_interaction_time else 'нет данных'}"
+            )
+
+            await message.answer(progress_text)
+
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {str(e)}")
+
+
+@router.message(Command("send_feedback"), IsTeacherFilter())
+async def cmd_send_feedback(message: types.Message, bot: Bot):
+    """Отправить обратную связь студенту по username"""
+    try:
+        # Извлекаем username и сообщение из команды
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 3:
+            await message.answer("❌ Использование: /send_feedback @username <сообщение>")
+            return
+
+        # Убираем @ и приводим к нижнему регистру
+        username_search = parts[1].lstrip('@').lower()
+        feedback_text = parts[2]
+
+        async with AsyncSessionLocal() as session:
+            # Ищем пользователя по части username
+            users = await session.scalars(
+                select(User).where(User.username.ilike(f"%{username_search}%"))
+            )
+
+            users_list = list(users)
+
+            if not users_list:
+                await message.answer("❌ Пользователь с таким username не найден")
+                return
+
+            if len(users_list) > 1:
+                # Если найдено несколько пользователей
+                user_list_text = "Найдено несколько пользователей:\n"
+                for i, user in enumerate(users_list[:10], 1):
+                    user_list_text += f"{i}. @{user.username} (ID: {user.id})\n"
+
+                if len(users_list) > 10:
+                    user_list_text += f"\n... и еще {len(users_list) - 10} пользователей"
+
+                user_list_text += "\n\nУточните username"
+                await message.answer(user_list_text)
+                return
+
+            # Если найден один пользователь
+            user = users_list[0]
+
+            # Пытаемся отправить сообщение
+            try:
+                await bot.send_message(
+                    user.id,
+                    f"📩 Обратная связь:\n\n{feedback_text}\n\n"
+                    f"💡 Если у вас есть вопросы, обратитесь в поддержку."
+                )
+                await message.answer(f"✅ Сообщение отправлено пользователю @{user.username}")
+            except Exception as e:
+                await message.answer(f"❌ Не удалось отправить сообщение пользователю @{user.username}: {str(e)}")
+
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {str(e)}")
+
+
+@router.message(Command("thelp"), IsTeacherFilter())
+async def cmd_thelp(message: types.Message):
+    """Помощь по командам преподавателя"""
+    help_text = (
+        "👨‍🏫 Команды преподавателя:\n\n"
+        "/student_progress [@username] - Прогресс студента\n\n"
+        "/send_feedback [@username] [message] - Отправить обратную связь"
+    )
+    await message.answer(help_text)
+
+
+
+core/handlers/reply_handlers.py
+from config.settings import ADMIN_USER_ID, LEADS_TOKEN
+from config.database import AsyncSessionLocal
+
+from datetime import datetime, timedelta
+
+import aiohttp
+
+from aiogram.fsm.state import State, StatesGroup, default_state
+from aiogram.fsm.context import FSMContext, Bot
+from aiogram.filters import or_f, StateFilter
+from aiogram import Router, types, F
+from aiogram.filters import Text
+from aiogram.types import Message, CallbackQuery
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+from core.keyboards.reply import (
+    main_menu_kb,
+    practice_menu_kb,
+    cancel_kb,
+    tasks_menu_kb,
+    task_navigation_kb
+)
+from core.keyboards.inline import (
+    part_one_types_kb,
+    part_two_types_kb,
+    answer_options_kb,
+    theory_solution_kb,
+    topics_menu_kb,
+    difficult_topics_menu_kb,
+    achievements_button
+)
+
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+import random
+
+from core.database.models import Task, Theory
+
+from core.fsm.states import TaskStates
+
+from core.services.task_display import display_task, display_task_by_id
+from core.services.task_utils import (
+    get_shuffled_task_ids,
+    get_variant_task_ids
+)
+# from core.services.answer_processing import process_answer
+from core.services.task_utils import get_random_task
+from core.services.answer_checker import check_answer
+from core.services.stats_service import (
+    get_user_stats,
+    get_global_rank,
+    get_weekly_rank
+)
+
+from core.utils.debounce import throttle
+
+import logging
+
+
+logger = logging.getLogger(__name__)
+
+
+router = Router()
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # #
+'''ГЛАВНОЕ МЕНЮ'''
+# # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+# Обработчик кнопки "Практика"
+
+
+@router.message(Text("✏️ Практика"))
+async def practice_menu(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    await message.answer(
+        "Выберите тип практики",
+        reply_markup=practice_menu_kb()
+    )
+
+
+# Обработчик кнопки "Статистика"
+
+
+@router.message(Text("📊 Статистика"))
+@throttle(2.0)
+async def show_stats(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    async with AsyncSessionLocal() as session:
+        # Получаем статистику пользователя
+        stats = await get_user_stats(session, message.from_user.id)
+        if not stats:
+            await message.answer("Статистика пока недоступна")
+            return
+
+        # Формируем текст ответа
+        response = [
+            f"⚡️ Всего XP: {stats['total_xp']} | XP Недели: {stats['weekly_xp']}",
+            f"👤 Уровень {stats['level'][0]} - {stats['level'][1]}",
+            f"",
+            f"🔥 Текущая серия: {stats['streak']} дней!",
+            f"✅ Всего решено: {stats['total_tasks']} задач",
+            f"🎯 Общая точность: {int(stats['accuracy'])}%",
+            f""
+        ]
+
+        # Добавляем лучшую и худшую тему, если они есть
+        if stats['best_topic']:
+            response.append(
+                f"🏆 Лучшая тема: {stats['best_topic'].title_ru} ({int(stats['best_topic_accuracy'])}%)"
+            )
+        if stats['worst_topic']:
+            response.append(
+                f"⚠️ Тема для прокачки: {stats['worst_topic'].title_ru} ({int(stats['worst_topic_accuracy'])}%)"
+            )
+
+        # Добавляем рейтинги и достижения
+        response.extend([
+            f"",
+            f"🌍 Глобальный рейтинг: #{stats['global_rank']}",
+            f"📅 Недельный рейтинг: #{stats['weekly_rank']}",
+            f"🏆 Достижения: {stats['achievements_unlocked']}/{stats['achievements_total']}"
+        ])
+
+        # Создаем inline-кнопку для просмотра достижений
+        kb = achievements_button()
+
+        # Отправляем сообщение
+        await message.answer("\n".join(response), reply_markup=kb.as_markup())
+
+
+# Обработчик кнопки "Репетитор"
+
+
+@router.message(Text("👨‍🏫 Репетитор"))
+async def tutor_redirect(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    await message.answer(
+        "Улучши свои знания с репетитором или подпиской",
+        reply_markup=types.InlineKeyboardMarkup(
+            inline_keyboard=[[
+                types.InlineKeyboardButton(
+                    text="Репетитор",
+                    url="https://cw10005.tw1.ru/"
+                ),
+                types.InlineKeyboardButton(
+                    text="Подписка",
+                    url="https://cw10005.tw1.ru/"
+                )
+            ]]
+        )
+    )
+
+
+# Обработчик кнопки "Другие предметы"
+
+
+@router.message(Text("📚 Другие предметы"))
+async def other_subjects(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    await message.answer(
+        "Пока в разработке 🛠",
+        reply_markup=main_menu_kb()
+    )
+
+
+# Обработчик текста после нажатия "Поддержка" и антиспам
+
+
+user_cooldowns = {}
+
+# Время до возможности написать следующее сообщение в поддержку
+time_stop = 10
+
+
+class SupportStates(StatesGroup):
+    waiting_for_message = State()  # Состояние ожидания сообщения
+
+
+@router.message(Text("✉️ Поддержка"))
+@throttle(2.0)
+async def support_start(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    user_id = message.from_user.id
+
+    # Проверяем кулдаун
+    last_request = user_cooldowns.get(user_id)
+    if last_request and (datetime.now() - last_request) < timedelta(minutes=time_stop):
+        remaining = (last_request + timedelta(minutes=time_stop)
+                     ) - datetime.now()
+        await message.answer(
+            f"⏳ Вы сможете отправить следующее сообщение через {remaining.seconds // 60} мин.",
+            reply_markup=main_menu_kb()
+        )
+        return
+
+    # Устанавливаем кулдаун
+    user_cooldowns[user_id] = datetime.now()
+
+    await state.set_state(SupportStates.waiting_for_message)
+    await message.answer(
+        "✍️ Напишите ваше сообщение для поддержки:",
+        reply_markup=cancel_kb()
+    )
+
+# Обработчик если передумали писать в поддержку
+
+
+@router.message(Text("❌ Отменить"))
+@throttle(2.0)
+async def cancel_support(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+    await state.clear()
+    await message.answer(
+        "Отправка сообщения отменена",
+        reply_markup=main_menu_kb()
+    )
+
+# Обработчик отправления сообщения в поддержку
+
+
+@router.message(SupportStates.waiting_for_message)
+async def handle_support_message(message: types.Message, state: FSMContext):
+    try:
+        # Логируем полученное сообщение
+        # print(f"🟢 Получено сообщение поддержки: {message.text}")
+
+        # Отправляем админу
+        async with aiohttp.ClientSession() as session:
+            await session.post(
+                f"https://api.telegram.org/bot{LEADS_TOKEN}/sendMessage",
+                json={
+                    "chat_id": ADMIN_USER_ID,
+                    "text": f"✉️ Письмо в поддержку \n\nТелеграм: @{message.from_user.username}\nID: {message.from_user.id}\n\n📝 Сообщение:\n{message.text}\n\n⏱️ {datetime.now()}",
+                    "parse_mode": "HTML"
+                }
+            )
+
+        await message.answer(
+            "✅ Ваше сообщение отправлено!",
+            reply_markup=main_menu_kb()
+        )
+        await state.clear()  # Выходим из состояния
+
+    except Exception as e:
+        print(f"🔴 Ошибка: {e}")
+        await message.answer(
+            "❌ Ошибка при отправке",
+            reply_markup=main_menu_kb()
+        )
+        await state.clear()
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # #
+'''ПРАКТИКА МЕНЮ'''
+# # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+# Обработчик кнопки "Задания"
+
+
+@router.message(Text("📝 Задания"))
+@throttle(2.0)
+async def tasks_menu(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    await message.answer(
+        "Выберите тип практики:",
+        reply_markup=tasks_menu_kb()
+    )
+
+
+# Обработчик кнопки "Вариант"
+
+
+@router.message(Text("📋 Вариант"))
+@throttle(2.0)
+async def handle_variant(message: Message, state: FSMContext, bot: Bot):
+    """Обработчик кнопки 'Вариант' - создает полный вариант ОГЭ"""
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    try:
+        # Получаем ID заданий для варианта
+        task_ids = await get_variant_task_ids()
+
+        if not task_ids:
+            await message.answer("❌ Не удалось создать вариант. Задания не найдены.",
+                                 reply_markup=practice_menu_kb())
+            return
+
+        await state.update_data(
+            TASK_LIST=task_ids,
+            CURRENT_INDEX=0,
+            IS_RANDOM_SESSION=False,
+            IS_VARIANT_SESSION=True  # Флаг, что это сессия варианта
+        )
+
+        # Отображаем первое задание
+        await display_task_by_id(message, task_ids[0], state)
+
+    except Exception as e:
+        logger.error(f"Error in handle_variant: {e}", exc_info=True)
+        await message.answer("⚠️ Произошла ошибка при создании варианта",
+                             reply_markup=practice_menu_kb())
+
+
+# Обработчик кнопки "Темы"
+
+
+@router.message(Text("📖 Темы"))
+@throttle(2.0)
+async def show_topics_menu(message: Message, state: FSMContext, bot: Bot):
+    """Обработчик кнопки 'Темы'"""
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    kb = await topics_menu_kb()
+    sent_message = await message.answer(
+        "Выберите тему для практики:",
+        reply_markup=kb
+    )
+    # Сохраняем ID сообщения в состоянии
+    await state.update_data(menu_message_id=sent_message.message_id)
+
+
+# Обработчик кнопки "Сложные задачи"
+
+
+@router.message(Text("🔥 Сложные задачи"))
+@throttle(2.0)
+async def show_difficult_topics_menu(message: Message, state: FSMContext, bot: Bot):
+    """Обработчик кнопки 'Сложные задачи'"""
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    kb = await difficult_topics_menu_kb()
+    sent_message = await message.answer(
+        "Выберите тему для решения сложных задач:",
+        reply_markup=kb
+    )
+    # Сохраняем ID сообщения в состоянии
+    await state.update_data(menu_message_id=sent_message.message_id)
+
+
+# # Обработчик кнопки "Подписка"
+
+
+@router.message(Text("👨‍🏫 Подписка"))
+async def tutor_redirect(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    await message.answer(
+        "Улучши свои знания с репетитором или подпиской",
+        reply_markup=types.InlineKeyboardMarkup(
+            inline_keyboard=[[
+                types.InlineKeyboardButton(
+                    text="Репетитор",
+                    url="https://cw10005.tw1.ru/"
+                ),
+                types.InlineKeyboardButton(
+                    text="Подписка",
+                    url="https://cw10005.tw1.ru/"
+                )
+            ]]
+        )
+    )
+
+
+# Обработчик кнопки "Назад"
+
+
+@router.message(Text("✏️ Назад"))
+@throttle(2.0)
+async def back_to_main(message: types.Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    await message.answer(
+        "Выберите тип практики:",
+        reply_markup=main_menu_kb()
+    )
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # #
+'''ЗАДАНИЕ МЕНЮ'''
+# # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+# Обработчик кнопки "Случайные задачи"
+
+
+@router.message(Text("🎲 Случайные задачи"))
+@throttle(2.0)
+async def random_tasks(message: Message, state: FSMContext, bot: Bot):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    # Получаем перемешанные ID заданий ВСЕХ типов
+    task_ids = await get_shuffled_task_ids()
+
+    if not task_ids:
+        await message.answer("❌ Задачи не найдены", reply_markup=tasks_menu_kb())
+        return
+
+    await state.update_data(
+        TASK_LIST=task_ids,
+        CURRENT_INDEX=0,
+        IS_RANDOM_SESSION=True  # Флаг, что это случайная сессия
+    )
+
+    await display_task_by_id(message, task_ids[0], state)
+
+
+# Обработчик кнопки "Первая часть"
+
+
+@router.message(Text("1️⃣ Первая часть"))
+@throttle(2.0)
+async def show_part_one_menu(message: Message, bot: Bot, state: FSMContext):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    kb = await part_one_types_kb()
+    sent_message = await message.answer(
+        "Выберите тип задания первой части:",
+        reply_markup=kb
+    )
+    # Сохраняем ID сообщения в состоянии
+    await state.update_data(menu_message_id=sent_message.message_id)
+
+
+# Обработчик кнопки "Вторая часть"
+
+
+@router.message(Text("2️⃣ Вторая часть"))
+@throttle(2.0)
+async def show_part_two_menu(message: Message, bot: Bot, state: FSMContext):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+    kb = await part_two_types_kb()
+    sent_message = await message.answer(
+        "Выберите тип задания второй части:",
+        reply_markup=kb
+    )
+
+    # Сохраняем ID сообщения в состоянии
+    await state.update_data(menu_message_id=sent_message.message_id)
+
+
+# Обработчик кнопки "Назад"
+
+
+@router.message(Text("📝 Назад"))
+async def back_to_practice(message: types.Message, bot: Bot, state: FSMContext):
+    # Получаем сохраненный ID сообщения
+    data = await state.get_data()
+    message_id = data.get('menu_message_id')
+
+    if message_id:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            # Сообщение могло быть уже удалено или не найдено
+            logger.debug(f"Не удалось удалить сообщение: {e}")
+
+    await message.answer(
+        "Выберите тип практики:",
+        reply_markup=practice_menu_kb()
+    )
+
+
+# -------------| Обработчики reply-кнопок задачи |------------- #
+
+
+# Обработчик следующего задания
+
+
+@router.message(Text("▶️ Следующее задание"))
+@throttle(2.0)
+async def next_task(message: Message, state: FSMContext, bot: Bot):  # Добавляем Bot в параметры
+    try:
+        # Проверяем, не находится ли пользователь уже в процессе решения
+        current_state = await state.get_state()
+        if current_state == TaskStates.WAITING_ANSWER.state:
+            await message.answer("Пожалуйста, ответьте на текущее задание перед переходом к следующему")
+            return
+
+        data = await state.get_data()
+        task_ids = data.get('TASK_LIST', [])
+        current_idx = data.get('CURRENT_INDEX', 0)
+        task_message_id = data.get('task_message_id')
+        chat_id = data.get('chat_id', message.chat.id)
+        message_id = data.get('task_message_id')
+
+        print(
+            f"DEBUG: Trying to delete message {task_message_id} in chat {chat_id}")
+
+        # # Удаляем предыдущее сообщение
+        # if task_message_id:
+        #     try:
+        #         await bot.delete_message(
+        #             chat_id=chat_id,
+        #             message_id=task_message_id
+        #         )
+        #         print("DEBUG: Message deleted successfully")
+        #     except Exception as e:
+        #         print(f"DEBUG: Failed to delete message: {e}")
+        if message_id:
+            try:
+                await bot.delete_message(
+                    chat_id=message.chat.id,
+                    message_id=message_id
+                )
+            except Exception as e:
+                # Сообщение могло быть уже удалено или не найдено
+                logger.debug(f"Не удалось удалить сообщение: {e}")
+
+        if not task_ids:
+            await message.answer("❌ Список заданий пуст", reply_markup=practice_menu_kb())
+            await state.clear()
+            return
+
+        if current_idx + 1 >= len(task_ids):
+            await message.answer("🎉 Вы завершили все задания в этой сессии!", reply_markup=practice_menu_kb())
+            await state.clear()
+            return
+
+        next_idx = current_idx + 1
+        await display_task_by_id(message, task_ids[next_idx], state)
+        await state.update_data(CURRENT_INDEX=next_idx)
+
+    except Exception as e:
+        logger.error(f"Error in next_task: {e}", exc_info=True)
+        await message.answer("⚠️ Ошибка загрузки следующего задания", reply_markup=practice_menu_kb())
+        await state.clear()
+
+
+# Обработчик остановки практики
+
+
+@router.message(Text("⏹ Остановиться"))
+@throttle(2.0)
+async def stop_practice(message: Message, state: FSMContext, bot: Bot):  # Добавляем Bot
+    data = await state.get_data()
+    task_message_id = data.get('task_message_id')
+    chat_id = data.get('chat_id', message.chat.id)
+
+    if task_message_id:
+        try:
+            await bot.delete_message(  # Используем bot из параметров
+                chat_id=chat_id,
+                message_id=task_message_id
+            )
+        except Exception as e:
+            logger.warning(f"Could not delete message: {e}")
+
+    # Очищаем текущее состояние, чтобы не ждать ответа
+    await state.clear()
+
+    await message.answer(
+        "Практика завершена",
+        reply_markup=practice_menu_kb()
+    )
+
+
+# Обработчик текста
+
+
+@router.message(F.text, StateFilter(TaskStates.WAITING_ANSWER))
+async def handle_text_answer(message: Message, state: FSMContext):
+    """Обработчик текстовых ответов"""
+    try:
+        data = await state.get_data()
+        task_id = data['current_task_id']
+
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                from core.services.task_service import check_answer
+                result = await check_answer(
+                    session=session,
+                    task_id=task_id,
+                    user_answer=message.text,
+                    user_id=message.from_user.id,
+                    state=state
+                )
+
+                if not result["success"]:
+                    await message.answer("⚠️ Ошибка при проверке ответа")
+                    return
+
+                # Отправляем результат - ИСПРАВЛЕНО использование result
+                await message.answer(
+                    f"{'✅ Правильно!' if result['is_correct'] else '❌ Неверно!'}",
+                    reply_markup=theory_solution_kb(
+                        result['task_id'],  # Используем task_id из результата
+                        # Используем complexity из результата
+                        result['complexity']
+                    )
+                )
+
+    except Exception as e:
+        logger.error(f"Ошибка обработки: {str(e)}", exc_info=True)
+        await message.answer("⚠️ Ошибка при проверке ответа")
+        await state.clear()
+
+
+
+
+core/keyboards/__init__.py.py
+from .inline import (
+    part_one_types_kb,
+    answer_options_kb,
+    theory_solution_kb
+)
+from .reply import (
+    main_menu_kb,
+    practice_menu_kb,
+    cancel_kb,
+    task_navigation_kb,
+    tasks_menu_kb
+)
+
+
+
+
+core/keyboards/inline.py
+from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardMarkup
+
+from sqlalchemy import select
+from config.database import AsyncSessionLocal
+from core.database.models import Task, PartNumber, Complexity, Subtopic
+
+
+def answer_options_kb(options: list, task_id: int):
+    builder = InlineKeyboardBuilder()
+    for i, option in enumerate(options):
+        builder.button(text=f"{option}",
+                       callback_data=f"answer:{task_id}:{i}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def theory_solution_kb(task_id: int, complexity: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+
+    # Кнопка "Теория" (всегда есть)
+    builder.button(text="📚 Теория", callback_data=f"theory:{task_id}")
+
+    # Кнопка "Разбор" (только для HIGH сложности)
+    if complexity == Complexity.HIGH.value:  # Проверяем, что сложность = 'high'
+        builder.button(text="🎥 Разбор", callback_data=f"solution:{task_id}")
+
+    # Располагаем кнопки вертикально (одна под другой)
+    builder.adjust(1)
+
+    return builder.as_markup()
+
+
+async def part_one_types_kb():
+    """Создает inline-клавиатуру с кнопками для всех типов заданий первой части"""
+    builder = InlineKeyboardBuilder()
+
+    async with AsyncSessionLocal() as session:
+        async with session.begin():  # Явное управление транзакцией
+            # Получаем уникальные номера типов заданий первой части
+            stmt = select(Task.type_number).where(
+                Task.part_number == PartNumber.PART_ONE
+            ).distinct().order_by(Task.type_number)
+
+            result = await session.execute(stmt)
+            type_numbers = result.scalars().all()
+
+            if not type_numbers:
+                # Если заданий нет, возвращаем пустую клавиатуру
+                return builder.as_markup()
+
+            # Добавляем кнопки для каждого типа
+            for type_num in type_numbers:
+                builder.button(
+                    text=str(type_num),
+                    callback_data=f"part_one:{type_num}"
+                )
+
+            # Настраиваем количество кнопок в ряду (например, по 2)
+            builder.adjust(2)
+
+            return builder.as_markup()
+
+
+async def part_two_types_kb():
+    """Создает inline-клавиатуру с кнопками для всех типов заданий первой части"""
+    builder = InlineKeyboardBuilder()
+
+    async with AsyncSessionLocal() as session:
+        async with session.begin():  # Явное управление транзакцией
+            # Получаем уникальные номера типов заданий первой части
+            stmt = select(Task.type_number).where(
+                Task.part_number == PartNumber.PART_TWO
+            ).distinct().order_by(Task.type_number)
+
+            result = await session.execute(stmt)
+            type_numbers = result.scalars().all()
+
+            if not type_numbers:
+                # Если заданий нет, возвращаем пустую клавиатуру
+                return builder.as_markup()
+
+            # Добавляем кнопки для каждого типа
+            for type_num in type_numbers:
+                builder.button(
+                    text=str(type_num),
+                    callback_data=f"part_two:{type_num}"
+                )
+
+            # Настраиваем количество кнопок в ряду (например, по 2)
+            builder.adjust(2)
+
+            return builder.as_markup()
+
+
+async def topics_menu_kb():
+    """Создает клавиатуру с подтемами (на русском)"""
+    builder = InlineKeyboardBuilder()
+
+    async with AsyncSessionLocal() as session:
+        # Получаем все подтемы с русскими названиями
+        stmt = select(Subtopic).order_by(Subtopic.id)
+        subtopics = (await session.execute(stmt)).scalars().all()
+
+        for subtopic in subtopics:
+            if subtopic.title_ru:  # Только подтемы с русскими названиями
+                builder.button(
+                    text=subtopic.title_ru,
+                    callback_data=f"subtopic:{subtopic.id}"
+                )
+
+        builder.adjust(2)  # 2 кнопки в ряд
+        return builder.as_markup()
+
+
+async def difficult_topics_menu_kb():
+    """Создает клавиатуру с подтемами, где есть сложные задания"""
+    builder = InlineKeyboardBuilder()
+
+    async with AsyncSessionLocal() as session:
+        # Получаем подтемы, где есть задания высокой сложности
+        stmt = select(Subtopic).join(Task).where(
+            Task.complexity == Complexity.HIGH
+        ).distinct().order_by(Subtopic.id)
+
+        subtopics = (await session.execute(stmt)).scalars().all()
+
+        for subtopic in subtopics:
+            if subtopic.title_ru:  # Только подтемы с русскими названиями
+                builder.button(
+                    text=subtopic.title_ru,
+                    callback_data=f"difficult_subtopic:{subtopic.id}"
+                )
+
+        builder.adjust(2)  # 2 кнопки в ряд
+        return builder.as_markup()
+
+
+def achievements_button() -> InlineKeyboardBuilder:
+    """Создает кнопку для просмотра достижений"""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🏅 Посмотреть достижения",
+              callback_data="show_achievements")
+    return kb
+
+
+
+core/keyboards/reply.py
+# Может стоит сделать builder.adjust(3)
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
+
+
+def main_menu_kb():
+    builder = ReplyKeyboardBuilder()
+    builder.button(text="✏️ Практика")
+    builder.button(text="📊 Статистика")
+    # builder.button(text="🎥 Видеоуроки")
+    builder.button(text="👨‍🏫 Репетитор")
+    builder.button(text="📚 Другие предметы")
+    builder.button(text="✉️ Поддержка")
+    builder.adjust(2)
+    return builder.as_markup(resize_keyboard=True)
+
+
+def practice_menu_kb():
+    builder = ReplyKeyboardBuilder()
+    builder.button(text="📝 Задания")
+    builder.button(text="📋 Вариант")
+    builder.button(text="📖 Темы")
+    builder.button(text="🔥 Сложные задачи")
+    # builder.button(text="🏆 Соревнования")
+    builder.button(text="✏️ Назад")
+    builder.button(text="👨‍🏫 Подписка")
+    builder.adjust(2)
+    return builder.as_markup(resize_keyboard=True)
+
+
+def cancel_kb():
+    builder = ReplyKeyboardBuilder()
+    builder.button(text="❌ Отменить")
+    return builder.as_markup(resize_keyboard=True)
+
+
+def tasks_menu_kb():
+    builder = ReplyKeyboardBuilder()
+    builder.button(text="🎲 Случайные задачи")
+    builder.button(text="1️⃣ Первая часть")
+    builder.button(text="2️⃣ Вторая часть")
+    builder.button(text="📝 Назад")
+    builder.adjust(2)
+    return builder.as_markup(resize_keyboard=True)
+
+
+def task_navigation_kb(task_type: int):
+    builder = ReplyKeyboardBuilder()
+    builder.button(text="▶️ Следующее задание")
+    builder.button(text="⏹ Остановиться")
+    return builder.as_markup(resize_keyboard=True)
+
+
+
+core/middlwares/cleanup_middleware.py
+from aiogram import BaseMiddleware
+from aiogram.types import Message, TelegramObject
+from typing import Callable, Awaitable, Any, Dict
+from aiogram.fsm.context import FSMContext
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class CleanupMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: Dict[str, Any]
+    ) -> Any:
+        # Работаем только с сообщениями
+        if not isinstance(event, Message):
+            return await handler(event, data)
+
+        # Получаем состояние и FSMContext
+        state: FSMContext = data.get('state')
+        if not state:
+            return await handler(event, data)
+
+        # Получаем сохраненные данные о предыдущих сообщениях
+        state_data = await state.get_data()
+        buttons_message_id = state_data.get('buttons_message_id')
+        chat_id = state_data.get('chat_id')
+
+        # Если есть сообщение с кнопками - удаляем его
+        if buttons_message_id and chat_id:
+            try:
+                await event.bot.delete_message(
+                    chat_id=chat_id,
+                    message_id=buttons_message_id
+                )
+                logger.debug(f"Deleted buttons message {buttons_message_id}")
+            except Exception as e:
+                logger.debug(f"Could not delete buttons message: {e}")
+
+        # Вызываем следующий обработчик
+        return await handler(event, data)
+
+
+
+core/middlwares/user_middleware.py
+from aiogram import BaseMiddleware
+from typing import Callable, Awaitable, Any
+from aiogram.types import TelegramObject
+from config.database import AsyncSessionLocal
+from core.services.user_service import get_or_create_user
+
+
+class UserMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any]
+    ) -> Any:
+        # Работаем только с сообщениями от пользователей
+        if not hasattr(event, 'from_user'):
+            return await handler(event, data)
+
+        async with AsyncSessionLocal() as session:
+            user = await get_or_create_user(
+                session=session,
+                user_id=event.from_user.id,
+                username=event.from_user.username
+            )
+            data['user'] = user  # Добавляем пользователя в контекст
+
+        return await handler(event, data)
+
+
+
+core/services/__init.py
+from .task_utils import get_random_task
+from .task_display import display_task
+from .task_service import check_answer, stop_practice_session
+from .achievement_service import check_and_unlock_achievements, get_user_achievements
+from .reminder_service import ReminderService, send_inactivity_reminders
+
+__all__ = ['ReminderService', 'send_inactivity_reminders']
+
+
+
+
+core/services/stats_service.py
+from datetime import datetime, timedelta
+from sqlalchemy import and_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, update, inspect
+from core.database.models import (
+    UserStat,
+    UserProgress,
+    Task,
+    WeeklyXP,  # Не работает
+    Subtopic,
+    User,
+    UserAchievement,
+    Achievement,
+    Complexity,
+    UserStatus
+)
+from sqlalchemy.orm.attributes import flag_modified
+from sqlalchemy.orm import selectinload
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+async def update_user_stats(
+    session: AsyncSession,
+    user_id: int,
+    task_id: int,
+    is_correct: bool
+) -> bool:
+    """Обновляет статистику с учетом всех требований"""
+    try:
+        # Получаем необходимые данные
+        task = await session.get(Task, task_id)
+        user = await session.get(User, user_id)
+
+        if not task or not user:
+            logger.error("Task or user not found")
+            return False
+
+        # Определяем количество очков
+        premium_statuses = [UserStatus.SUB, UserStatus.PRO_SUB]
+        standard_statuses = [UserStatus.NO_SUB, UserStatus.ADMIN,
+                             UserStatus.MODERATOR, UserStatus.TEACHER]
+
+        if task.complexity == Complexity.BASIC:
+            if is_correct:
+                if user.status in premium_statuses:
+                    points = 2
+                elif user.status in standard_statuses:
+                    points = 1
+                else:
+                    points = 0
+            else:
+                points = -1
+
+        elif task.complexity == Complexity.ADVANCED:
+            if is_correct:
+                if user.status in premium_statuses:
+                    points = 6
+                elif user.status in standard_statuses:
+                    points = 4
+                else:
+                    points = 0
+            else:
+                points = -2
+
+        elif task.complexity == Complexity.HIGH:
+            if is_correct:
+                if user.status in premium_statuses:
+                    points = 20
+                elif user.status in standard_statuses:
+                    points = 15
+                else:
+                    points = 0
+            else:
+                points = -6
+
+        else:
+            points = 0
+
+        # Получаем или создаем записи статистики
+        user_stat = await session.get(UserStat, user_id, with_for_update=True) or \
+            UserStat(user_id=user_id)
+
+        user_progress = await session.get(UserProgress, user_id, with_for_update=True) or \
+            UserProgress(user_id=user_id)
+
+        # Обновляем статистику
+        user_stat.total_attempts += 1
+        if is_correct:
+            user_stat.correct_answers += 1
+        user_stat.percentage = (
+            user_stat.correct_answers / user_stat.total_attempts) * 100
+
+        # Обновляем прогресс (защита от отрицательных значений)
+        new_total = max(0, user_progress.total_points + points)
+        new_weekly = max(0, user_progress.weekly_points + points)
+
+        # Вычисляем current_streak
+        today = datetime.utcnow().date()
+        last_active = user_progress.last_active_day
+
+        if last_active == today - timedelta(days=1):
+            # Пользователь активен второй день подряд
+            current_streak = user_progress.current_streak + 1
+        elif last_active == today:
+            # Уже активен сегодня - не увеличиваем streak
+            current_streak = user_progress.current_streak
+        else:
+            # Перерыв - сбрасываем streak
+            current_streak = 1
+
+        # Применяем обновления
+        user_progress.total_points = new_total
+        user_progress.weekly_points = new_weekly
+        user_progress.current_streak = current_streak
+        user_progress.last_active_day = today
+        user_progress.daily_record += 1
+
+        # Обновляем статистику по подтеме
+        if task.subtopic_id:
+            subtopic_key = str(task.subtopic_id)
+            if subtopic_key not in user_stat.subtopics_stats:
+                user_stat.subtopics_stats[subtopic_key] = {
+                    "correct": 0, "wrong": 0}
+
+            if is_correct:
+                user_stat.subtopics_stats[subtopic_key]["correct"] += 1
+            else:
+                user_stat.subtopics_stats[subtopic_key]["wrong"] += 1
+
+            flag_modified(user_stat, "subtopics_stats")
+
+        # Гарантируем сохранение объектов
+        session.add_all([user_stat, user_progress])
+        await session.flush()
+
+        logger.info(
+            f"Updated stats for user {user_id}: "
+            f"status={user.status.value}, "
+            f"complexity={task.complexity.value}, "
+            f"correct={is_correct}, "
+            f"points={points}, "
+            f"total={user_progress.total_points}, "
+            f"weekly={user_progress.weekly_points}, "
+            f"streak={current_streak} days"
+        )
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error updating stats: {e}", exc_info=True)
+        await session.rollback()
+        return False
+
+
+def calculate_percentage(user_stat: UserStat) -> float:
+    """Вычисляем процент правильных ответов"""
+    if user_stat.total_attempts == 0:
+        return 0.0
+    return (user_stat.correct_answers / user_stat.total_attempts) * 100
+
+
+def update_subtopic_stats(user_stat: UserStat, subtopic_id: int, is_correct: bool):
+    """Обновляем статистику по подтеме"""
+    subtopic_key = str(subtopic_id)
+    if subtopic_key not in user_stat.subtopics_stats:
+        user_stat.subtopics_stats[subtopic_key] = {"correct": 0, "wrong": 0}
+
+    if is_correct:
+        user_stat.subtopics_stats[subtopic_key]["correct"] += 1
+    else:
+        user_stat.subtopics_stats[subtopic_key]["wrong"] += 1
+
+    flag_modified(user_stat, "subtopics_stats")
+
+
+def update_progress(user_progress: UserProgress, is_correct: bool):
+    """Обновляем прогресс пользователя"""
+    points = 2 if is_correct else 1
+    user_progress.total_points += points
+    user_progress.weekly_points += points
+    user_progress.daily_record += 1
+
+
+async def get_user_stats_summary(session: AsyncSession, user_id: int):
+    """
+    Возвращает сводную статистику пользователя
+    """
+    try:
+        inspector = inspect(session.get_bind())
+        if not all(inspector.has_table(table) for table in ['user_stats', 'user_progress']):
+            return None
+
+        user_stat = await session.get(UserStat, user_id)
+        user_progress = await session.get(UserProgress, user_id)
+
+        if not user_stat or not user_progress:
+            return None
+
+        return {
+            "total_attempts": user_stat.total_attempts,
+            "correct_answers": user_stat.correct_answers,
+            "percentage": user_stat.percentage,
+            "current_streak": user_progress.current_streak,
+            "total_points": user_progress.total_points,
+            "daily_record": user_progress.daily_record
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting user stats summary: {str(e)}")
+        return None
+
+
+async def calculate_user_level(total_xp: int) -> tuple[int, str]:
+    """Вычисляет уровень и титул пользователя на основе XP"""
+    levels = {
+        0: "<b>Новичок</b> → Ученик (6 ур.)",
+        500: "<b>Ученик</b> → Знаток (21 ур.)",
+        2000: "<b>Знаток</b> → Эксперт (51 ур.)",
+        5000: "<b>Эксперт</b> → Мастер (81 ур.)",
+        8000: "<b>Мастер</b> → Гуру (131 ур.)",
+        13000: "<b>Гуру</b> → Идеал (201 ур.)",
+        20000: "<b>Идеал</b> → Всевышний (501 ур.)",
+        50000: "<b>Всевышний</b> → Непостижимый (1001 ур.)",
+        100000: "<b>Непостижимый</b>"
+    }
+
+    level = total_xp // 100 + 1
+    title = next(
+        (title for xp, title in sorted(levels.items(), reverse=True) if total_xp >= xp)
+    )
+
+    return level, title
+
+
+async def get_user_stats(session: AsyncSession, user_id: int) -> dict:
+    """Получает полную статистику пользователя"""
+    try:
+        async with session.begin():
+            # Получаем основную статистику
+            user_stat = await session.get(UserStat, user_id)
+            user_progress = await session.get(UserProgress, user_id)
+
+            if not user_stat or not user_progress:
+                logger.warning(
+                    f"User stats or progress not found for user {user_id}")
+                return None
+
+            # Получаем XP за неделю
+            week_start = datetime.utcnow().date() - timedelta(days=datetime.utcnow().weekday())
+            weekly_xp = await session.scalar(
+                select(func.sum(WeeklyXP.xp_earned))
+                .where(and_(
+                    WeeklyXP.user_id == user_id,
+                    WeeklyXP.week_start_date == week_start
+                ))
+            ) or 0
+
+            # Вычисляем уровень и титул
+            level, title = await calculate_user_level(user_progress.total_points)
+
+            # Находим лучшую и худшую тему
+            best_topic = worst_topic = None
+            best_topic_accuracy = worst_topic_accuracy = 0
+
+            if user_stat.subtopics_stats:
+                try:
+                    sorted_topics = sorted(
+                        [(k, v) for k, v in user_stat.subtopics_stats.items()
+                         if isinstance(v, dict)],
+                        key=lambda x: (x[1].get('correct', 0) / (x[1].get('correct', 0) + x[1].get('wrong', 1))
+                                       if (x[1].get('correct', 0) + x[1].get('wrong', 0)) > 0 else 0),
+                        reverse=True
+                    )
+
+                    if sorted_topics:
+                        best_id, best_stats = sorted_topics[0]
+                        worst_id, worst_stats = sorted_topics[-1]
+
+                        best_topic = await session.get(Subtopic, int(best_id))
+                        worst_topic = await session.get(Subtopic, int(worst_id))
+
+                        best_total = best_stats.get(
+                            'correct', 0) + best_stats.get('wrong', 0)
+                        best_topic_accuracy = (best_stats.get(
+                            'correct', 0) / best_total) * 100 if best_total > 0 else 0
+
+                        worst_total = worst_stats.get(
+                            'correct', 0) + worst_stats.get('wrong', 0)
+                        worst_topic_accuracy = (worst_stats.get(
+                            'correct', 0) / worst_total) * 100 if worst_total > 0 else 0
+                except Exception as e:
+                    logger.error(f"Error processing subtopics stats: {e}")
+
+            # Получаем рейтинги
+            global_rank = await get_global_rank(session, user_id) or 0
+            weekly_rank = await get_weekly_rank(session, user_id) or 0
+
+            # Получаем информацию о достижениях
+            achievements_unlocked = await session.scalar(
+                select(func.count(UserAchievement.achievement_id))
+                .where(and_(
+                    UserAchievement.user_id == user_id,
+                    UserAchievement.unlocked_at.is_not(None)
+                ))
+            ) or 0
+
+            achievements_total = await session.scalar(select(func.count(Achievement.id))) or 0
+
+            stats_data = {
+                "total_xp": user_progress.total_points or 0,
+                "weekly_xp": user_progress.weekly_points,
+                "level": (level or 0, title or "Новичок"),
+                "streak": user_progress.current_streak or 0,
+                "total_tasks": user_stat.total_attempts or 0,
+                "accuracy": user_stat.percentage or 0,
+                "best_topic": best_topic,
+                "best_topic_accuracy": best_topic_accuracy,
+                "worst_topic": worst_topic,
+                "worst_topic_accuracy": worst_topic_accuracy,
+                "global_rank": global_rank,
+                "weekly_rank": weekly_rank,
+                "achievements_unlocked": achievements_unlocked,
+                "achievements_total": achievements_total
+            }
+
+            logger.info(f"Successfully collected stats for user {user_id}")
+            return stats_data
+
+    except Exception as e:
+        logger.error(f"Error in get_user_stats: {e}", exc_info=True)
+        return None
+
+
+async def get_global_rank(session: AsyncSession, user_id: int) -> int:
+    """
+    Получает глобальный рейтинг пользователя по общему количеству XP (total_points)
+    Возвращает позицию в рейтинге (1-based) или 0 если пользователь не найден
+    """
+    try:
+        # Создаем CTE для ранжирования пользователей
+        rank_query = (
+            select(
+                UserProgress.user_id,
+                UserProgress.total_points,
+                func.rank().over(order_by=UserProgress.total_points.desc()).label('rank')
+            )
+            .select_from(UserProgress)
+            .join(User, User.id == UserProgress.user_id)
+            # Исключаем админов и модераторов
+            .where(User.status.not_in(['admin', 'moderator']))
+            .cte('user_ranks')
+        )
+
+        # Получаем ранг конкретного пользователя
+        result = await session.execute(
+            select(rank_query.c.rank)
+            .where(rank_query.c.user_id == user_id)
+        )
+
+        return result.scalar() or 0
+
+    except Exception as e:
+        logger.error(f"Error getting global rank: {e}")
+        return 0
+
+
+async def get_weekly_rank(session: AsyncSession, user_id: int) -> int:
+    """
+    Получает недельный рейтинг пользователя по weekly_points
+    Возвращает позицию в рейтинге (1-based) или 0 если пользователь не найден
+    """
+    try:
+        # Создаем CTE для ранжирования пользователей по weekly_points
+        rank_query = (
+            select(
+                UserProgress.user_id,
+                UserProgress.weekly_points,
+                func.rank().over(order_by=UserProgress.weekly_points.desc()).label('rank')
+            )
+            .select_from(UserProgress)
+            .join(User, User.id == UserProgress.user_id)
+            # Исключаем админов и модераторов
+            .where(User.status.not_in(['admin', 'moderator']))
+            .cte('weekly_ranks')
+        )
+
+        # Получаем ранг конкретного пользователя
+        result = await session.execute(
+            select(rank_query.c.rank)
+            .where(rank_query.c.user_id == user_id)
+        )
+
+        return result.scalar() or 0
+
+    except Exception as e:
+        logger.error(f"Error getting weekly rank: {e}")
+        return 0
+
+
+async def update_weekly_xp(session: AsyncSession, user_id: int) -> bool:
+    """Обновление weekly_points в начале новой недели"""
+    try:
+        today = datetime.utcnow().date()
+        week_start = today - timedelta(days=today.weekday())
+
+        async with session.begin():
+            user_progress = await session.get(UserProgress, user_id, with_for_update=True)
+            if not user_progress:
+                logger.error(f"UserProgress not found for {user_id}")
+                return False
+
+            # Если последняя активность была на прошлой неделе
+            if user_progress.last_active_day and user_progress.last_active_day < week_start:
+                # Сбрасываем weekly_points при переходе на новую неделю
+                user_progress.weekly_points = 0
+                logger.info(f"Reset weekly points for user {user_id}")
+                await session.flush()
+
+            return True
+
+    except Exception as e:
+        logger.error(f"Error updating weekly XP: {e}")
+        await session.rollback()
+        return False
+
+
+async def reset_all_weekly_points(session: AsyncSession) -> int:
+    """Обнуляет weekly_points у всех пользователей и возвращает количество обновленных записей"""
+    try:
+        result = await session.execute(
+            update(UserProgress)
+            .values(weekly_points=0)
+        )
+        await session.commit()
+        return result.rowcount
+    except Exception as e:
+        logger.error(f"Error resetting weekly points: {e}")
+        await session.rollback()
+        return 0
+
+
+
+
+
+core/services/task_display.py
+import logging
+from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from core.database.models import Task, Complexity
+from core.fsm.states import TaskStates
+from config.database import AsyncSessionLocal
+from ..keyboards.inline import answer_options_kb
+from ..keyboards.reply import task_navigation_kb
+
+logger = logging.getLogger(__name__)
+
+
+async def display_task(message: Message, task: Task, state: FSMContext):
+    """Отображает задание с вариантами ответов"""
+    try:
+        # Добавляем отметку о сложности
+        complexity_marker = ""
+        if task.complexity == Complexity.HIGH:
+            complexity_marker = "🔥 "
+
+        text = (
+            f"📌 Номер задания: {task.id} {complexity_marker}\n"
+            f"Тип задания: {task.type_number}\n\n"
+            f"{task.task_content['text']}\n\n"
+        )
+
+        # Проверяем наличие изображения
+        image_url = task.task_content.get('image')
+        task_text = task.task_content.get('text', 'Текст задания отсутствует')
+
+        if image_url:
+            # Если есть изображение - пытаемся отправить фото с подписью
+            try:
+                msg = await message.answer_photo(
+                    photo=image_url,
+                    caption=text,
+                    reply_markup=answer_options_kb(
+                        task.answer_options, task.id)
+                )
+            except Exception as e:
+                logger.error(f"Error sending photo with caption: {e}")
+
+                # Пытаемся отправить изображение отдельным сообщением
+                try:
+                    # Сначала отправляем изображение
+                    await message.answer_photo(
+                        photo=image_url
+                    )
+                    # Затем отправляем текст задания с клавиатурой
+                    msg = await message.answer(
+                        text + "\n\nИзображение отправлено отдельным сообщением",
+                        reply_markup=answer_options_kb(
+                            task.answer_options, task.id)
+                    )
+                except Exception as e2:
+                    logger.error(f"Error sending photo separately: {e2}")
+                    # Если не удалось отправить вообще, отправляем только текст
+                    msg = await message.answer(
+                        text + "\n\n⚠️ Не удалось загрузить изображение",
+                        reply_markup=answer_options_kb(
+                            task.answer_options, task.id)
+                    )
+        else:
+            # Если нет изображения - отправляем только текст
+            msg = await message.answer(
+                text,
+                reply_markup=answer_options_kb(task.answer_options, task.id)
+            )
+
+        # Сохраняем данные в состоянии
+        await state.update_data(
+            task_message_id=msg.message_id,
+            chat_id=message.chat.id,
+            current_task_id=task.id,
+            current_type=task.type_number
+        )
+
+        # Отправляем клавиатуру навигации
+        await message.answer(
+            "Выберите действие:",
+            reply_markup=task_navigation_kb(task.type_number)
+        )
+
+        await state.set_state(TaskStates.WAITING_ANSWER)
+        await state.update_data(current_task_id=task.id)
+        logger.info(
+            f"Установлено состояние WAITING_ANSWER для задания {task.id}")
+
+    except Exception as e:
+        logger.error(f"Error displaying task: {str(e)}")
+        await message.answer(f"Произошла ошибка при отображении задания {task.id}")
+
+
+async def display_task_by_id(message: Message, task_id: int, state: FSMContext):
+    """Отображает задание с проверкой состояния"""
+    try:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                task = await session.get(
+                    Task,
+                    task_id,
+                    options=[
+                        selectinload(Task.topic),
+                        selectinload(Task.subtopic)
+                    ]
+                )
+
+                if not task:
+                    await message.answer("Задание не найдено")
+                    return
+
+        # Устанавливаем состояние перед отображением задания
+        await state.set_state(TaskStates.WAITING_ANSWER)
+        await display_task(message, task, state)
+
+    except Exception as e:
+        logger.error(f"Error in display_task_by_id: {e}", exc_info=True)
+        await message.answer("Ошибка при загрузке задания")
+        await state.clear()
+
+
+
+
+
+core/services/task_service.py
+from .task_utils import get_random_task  # Если нужно внутри этого файла
+from core.database.models import Task, Theory
+from core.fsm.states import TaskStates
+from aiogram.types import Message, InlineKeyboardMarkup
+from aiogram.fsm.context import FSMContext
+from ..keyboards.reply import (
+    practice_menu_kb,
+    task_navigation_kb
+)
+from ..keyboards.inline import (
+    answer_options_kb,
+    theory_solution_kb
+)
+from aiogram.types import Message, CallbackQuery
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+import random
+from config.database import AsyncSessionLocal
+from sqlalchemy.ext.asyncio import AsyncSession
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+async def check_answer(
+    session: AsyncSession,
+    task_id: int,
+    user_answer: str,
+    user_id: int,
+    state: FSMContext | None = None
+) -> dict:  # ИЗМЕНИТЕ ТИП ВОЗВРАТА НА dict
+    """Проверка ответа с полным обновлением статистики"""
+    try:
+        # Получаем задачу
+        task = await session.get(Task, task_id)
+        if not task:
+            logger.error(f"Task {task_id} not found")
+            return {"success": False, "error": "Task not found"}
+
+        # Проверяем ответ
+        is_correct = str(user_answer).strip().lower() == str(
+            task.correct_answer).strip().lower()
+
+        # Обновляем статистику
+        from .stats_service import update_user_stats
+        update_success = await update_user_stats(
+            session=session,
+            user_id=user_id,
+            task_id=task_id,
+            is_correct=is_correct
+        )
+
+        if not update_success:
+            logger.error(f"Failed to update stats for user {user_id}")
+            return {"success": False, "error": "Failed to update stats"}
+
+        # Если передан state, обновляем его
+        if state:
+            await state.set_state(TaskStates.SHOWING_RESULT)
+
+        return {
+            "success": True,
+            "is_correct": is_correct,
+            "task": task,
+            "task_id": task_id,
+            "complexity": task.complexity.value
+        }
+
+    except Exception as e:
+        logger.error(f"Error in check_answer: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+async def stop_practice_session(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "Практика завершена",
+        reply_markup=practice_menu_kb()
+    ), CallbackQuery
+
+
+
+
+core/services/task_utils.py
+import random
+from sqlalchemy import select, and_, func
+from sqlalchemy.orm import selectinload
+from config.database import AsyncSessionLocal
+from core.database.models import Task, PartNumber
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+async def get_random_task(task_type: int = None) -> Task:
+    async with AsyncSessionLocal() as session:
+        stmt = select(Task)
+        if task_type is not None:
+            stmt = stmt.where(Task.type_number == task_type)
+        stmt = stmt.options(selectinload(Task.topic))
+        tasks = (await session.execute(stmt)).scalars().all()
+        return random.choice(tasks) if tasks else None
+
+
+async def get_shuffled_task_ids(
+        task_type: int = None,
+        part_number: PartNumber = None,
+        subtopic_id: int = None,
+        limit: int = 20
+) -> list[int]:
+    async with AsyncSessionLocal() as session:
+        try:
+            stmt = select(Task.id)
+
+            # Добавляем условия фильтрации, если они указаны
+            filters = []
+            if task_type is not None:
+                filters.append(Task.type_number == task_type)
+            if part_number is not None:
+                filters.append(Task.part_number == part_number)
+            if subtopic_id is not None:
+                filters.append(Task.subtopic_id == subtopic_id)
+
+            if filters:
+                stmt = stmt.where(and_(*filters))
+
+            result = await session.execute(stmt)
+            task_ids = [row[0] for row in result.all()]
+
+            random.shuffle(task_ids)
+            return task_ids[:limit]
+
+        except Exception as e:
+            logger.error(f"Error getting task ids: {str(e)}")
+            return []
+
+
+async def get_variant_task_ids() -> list[int]:
+    """Возвращает список ID заданий (по одному случайному каждого типа)"""
+    async with AsyncSessionLocal() as session:
+        try:
+            # Получаем все существующие типы заданий
+            stmt = select(Task.type_number).distinct().order_by(
+                Task.type_number)
+            type_numbers = (await session.execute(stmt)).scalars().all()
+
+            task_ids = []
+
+            # Для каждого типа получаем одно случайное задание
+            for type_num in type_numbers:
+                stmt = select(Task.id).where(
+                    Task.type_number == type_num
+                ).order_by(func.random()).limit(1)
+
+                task_id = (await session.execute(stmt)).scalar_one_or_none()
+                if task_id:
+                    task_ids.append(task_id)
+
+            return task_ids
+
+        except Exception as e:
+            logger.error(f"Error getting variant tasks: {str(e)}")
+            return []
+
+
+
+
+core/services/user_service.py
+import logging
+from datetime import datetime
+from sqlalchemy import select, func, and_, update
+from sqlalchemy.orm.attributes import flag_modified
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
+from core.database.models import User, UserStat, UserProgress, Topic, Subtopic
+
+
+logger = logging.getLogger(__name__)
+
+
+async def get_or_create_user(session: AsyncSession, user_id: int, username: str = None) -> User:
+    """
+    Получает или создает пользователя с начальной статистикой и прогрессом
+    """
+    try:
+        # 1. Получаем или создаем пользователя
+        user = await session.get(User, user_id)
+
+        if user is None:
+            logger.info(f"Creating new user {user_id}")
+            user = User(
+                id=user_id,
+                username=username,
+                registration_date=datetime.utcnow(),
+                status='no_sub',
+                last_interaction_time=datetime.utcnow()
+            )
+            session.add(user)
+            await session.commit()
+            logger.info(f"User {user_id} created successfully")
+
+            # 2. Создаем запись прогресса
+            progress = UserProgress(user_id=user_id)
+            session.add(progress)
+
+            # 3. Создаем начальную статистику
+            stat = UserStat(
+                user_id=user_id,
+                subtopics_stats={},
+                correct_answers=0,
+                total_attempts=0,
+                percentage=0.0
+            )
+            session.add(stat)
+
+            await session.commit()
+            logger.info(
+                f"Initial stats and progress created for user {user_id}")
+
+            # 4. Инициализируем статистику по подтемам (опционально)
+            await initialize_subtopic_stats(session, user_id)
+        else:
+            logger.info(f"Updating existing user {user_id}")
+            user.last_interaction_time = datetime.utcnow()
+            if username and user.username != username:
+                user.username = username
+            await session.commit()
+
+        return user
+
+    except SQLAlchemyError as e:
+        logger.error(
+            f"Database error in get_or_create_user: {str(e)}", exc_info=True)
+        await session.rollback()
+        raise
+    except Exception as e:
+        logger.error(
+            f"Unexpected error in get_or_create_user: {str(e)}", exc_info=True)
+        await session.rollback()
+        raise
+
+
+async def initialize_subtopic_stats(session: AsyncSession, user_id: int):
+    """
+    Инициализирует статистику по всем подтемам для нового пользователя
+    """
+    try:
+        subtopics = await session.execute(select(Subtopic))
+        subtopics = subtopics.scalars().all()
+
+        if not subtopics:
+            logger.warning("No subtopics found in database!")
+            return
+
+        user_stat = await session.get(UserStat, user_id)
+        if not user_stat:
+            logger.error(f"UserStat not found for user {user_id}")
+            return
+
+        # Инициализируем нулевые значения для всех подтем
+        for subtopic in subtopics:
+            if str(subtopic.id) not in user_stat.subtopics_stats:
+                user_stat.subtopics_stats[str(subtopic.id)] = {
+                    "correct": 0,
+                    "wrong": 0
+                }
+
+        logger.debug(f"Before flag_modified: {user_stat.subtopics_stats}")
+        flag_modified(user_stat, "subtopics_stats")
+        logger.debug(f"After flag_modified: {user_stat.subtopics_stats}")
+
+        # Помечаем поле как измененное
+        flag_modified(user_stat, "subtopics_stats")
+
+        await session.commit()
+        logger.info(f"Initialized subtopic stats for user {user_id}")
+
+    except SQLAlchemyError as e:
+        logger.error(
+            f"Database error in initialize_subtopic_stats: {str(e)}", exc_info=True)
+        await session.rollback()
+        raise
+
+
+async def update_user_stats(
+    session: AsyncSession,
+    user_id: int,
+    subtopic_id: int,
+    is_correct: bool
+):
+    """
+    Обновляет статистику пользователя после ответа на задание
+    """
+    try:
+        user_stat = await session.get(UserStat, user_id)
+        if not user_stat:
+            logger.error(f"UserStat not found for user {user_id}")
+            return
+
+        # Обновляем общую статистику
+        user_stat.total_attempts += 1
+        if is_correct:
+            user_stat.correct_answers += 1
+        user_stat.percentage = (user_stat.correct_answers / user_stat.total_attempts) * \
+            100 if user_stat.total_attempts > 0 else 0
+
+        # Обновляем статистику по подтеме
+        subtopic_key = str(subtopic_id)
+        if subtopic_key not in user_stat.subtopics_stats:
+            user_stat.subtopics_stats[subtopic_key] = {
+                "correct": 0, "wrong": 0}
+
+        if is_correct:
+            user_stat.subtopics_stats[subtopic_key]["correct"] += 1
+        else:
+            user_stat.subtopics_stats[subtopic_key]["wrong"] += 1
+
+        await session.commit()
+        logger.debug(
+            f"Updated stats for user {user_id}, subtopic {subtopic_id}, correct: {is_correct}")
+
+    except SQLAlchemyError as e:
+        logger.error(
+            f"Database error in update_user_stats: {str(e)}", exc_info=True)
+        await session.rollback()
+        raise
+
+
+async def log_user_stats(session: AsyncSession, user_id: int):
+    """
+    Логирует текущую статистику пользователя (для отладки)
+    """
+    try:
+        user_stat = await session.get(UserStat, user_id)
+        if not user_stat:
+            logger.warning(f"No stats found for user {user_id}")
+            return 0
+
+        logger.debug(f"Stats for user {user_id}:")
+        logger.debug(
+            f"Total: correct={user_stat.correct_answers}, attempts={user_stat.total_attempts}, percentage={user_stat.percentage:.1f}%")
+
+        for subtopic_id, stats in user_stat.subtopics_stats.items():
+            logger.debug(
+                f"Subtopic {subtopic_id}: correct={stats['correct']}, wrong={stats['wrong']}")
+
+        return len(user_stat.subtopics_stats)
+
+    except SQLAlchemyError as e:
+        logger.error(f"Error logging stats for user {user_id}: {str(e)}")
+        return 0
+
+
+async def update_last_interaction(session: AsyncSession, user_id: int):
+    """Обновляет время последней активности пользователя"""
+    await session.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(last_interaction_time=datetime.utcnow())
+    )
+    await session.flush()
+
+
+
+
+
+core/services/answer_checker.py
+from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from config.database import AsyncSessionLocal
+from sqlalchemy.ext.asyncio import AsyncSession
+from core.keyboards.inline import theory_solution_kb
+from core.database.models import Task
+from sqlalchemy import select
+from core.fsm.states import TaskStates
+import logging
+from .achievement_service import check_and_unlock_achievements
+from ..keyboards.inline import achievements_button
+
+logger = logging.getLogger(__name__)
+
+
+async def check_answer(
+    session: AsyncSession,
+    task_id: int,
+    user_answer: str,
+    user_id: int
+) -> dict:
+    """Проверяет ответ и обновляет статистику"""
+    try:
+        task = await session.get(Task, task_id, with_for_update=True)
+        if not task:
+            return {"error": "Task not found"}
+
+        is_correct = str(user_answer).strip().lower() == str(
+            task.correct_answer).strip().lower()
+
+        # Обновляем статистику
+        from .stats_service import update_user_stats
+        update_success = await update_user_stats(
+            session=session,
+            user_id=user_id,
+            task_id=task_id,
+            is_correct=is_correct
+        )
+
+        # Обновляем время последней активности
+        from core.services.user_service import update_last_interaction
+        await update_last_interaction(session, user_id)
+
+        if not update_success:
+            return {"error": "Failed to update stats"}
+
+        # Проверяем достижения в той же транзакции
+        unlocked_achievements = await check_and_unlock_achievements(
+            session=session,
+            user_id=user_id,
+            is_correct=is_correct,  # Передаем флаг правильности ответа
+            task_id=task_id
+        )
+
+        return {
+            "is_correct": is_correct,
+            "task_id": task_id,
+            "complexity": task.complexity.value,
+            "unlocked_achievements": unlocked_achievements
+        }
+
+    except Exception as e:
+        logger.error(f"Error in check_answer: {e}", exc_info=True)
+        await session.rollback()
+        return {"error": str(e)}
+
+
+core/services/reminder_service.py
+import logging
+from datetime import datetime, timedelta
+from typing import List, Dict, Optional, Tuple
+from aiogram import Bot
+from sqlalchemy import select, and_, or_, not_
+from sqlalchemy.ext.asyncio import AsyncSession
+from core.database.models import User, Reminder, UserStatus
+from config.database import AsyncSessionLocal
+
+logger = logging.getLogger(__name__)
+
+
+class ReminderService:
+    def __init__(self, bot: Bot):
+        self.bot = bot
+        self.check_interval = 3600  # Интервал в секундах (1 час)
+        self.REMINDER_INTERVALS = {
+            'promo': [24, 48, 72],  # часы (1, 2 - убрать)
+            'inactive': [120, 168, 240, 504, 720]  # часы
+        }
+
+    async def get_users_for_reminders(self, session: AsyncSession) -> Dict[str, List[Tuple[int, str]]]:
+        """Возвращает пользователей для напоминаний, сгруппированных по типу"""
+        users = {'promo': [], 'inactive': []}
+        current_time = datetime.utcnow()
+
+        stmt = select(User.id, User.username, User.last_interaction_time).where(
+            and_(
+                not_(User.status.in_([
+                    UserStatus.ADMIN.value,
+                    UserStatus.MODERATOR.value,
+                    UserStatus.TEACHER.value
+                ])),
+                User.last_interaction_time.is_not(None)
+            )
+        )
+
+        result = await session.execute(stmt)
+
+        for user_id, username, last_interaction in result.all():
+            inactive_hours = (
+                current_time - last_interaction).total_seconds() / 3600
+
+            for reminder_type, intervals in self.REMINDER_INTERVALS.items():
+                for interval in intervals:
+                    if abs(inactive_hours - interval) <= 1:  # допуск ±1 час
+                        users[reminder_type].append((user_id, username))
+                        break
+
+        return users
+
+    async def get_reminder_text(self, session: AsyncSession, reminder_type: str) -> Optional[str]:
+        """Получает текст напоминания из БД"""
+        try:
+            stmt = select(Reminder.text).where(
+                Reminder.reminder_type == reminder_type
+            ).order_by(Reminder.date.desc()).limit(1)
+
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Error getting reminder text: {e}")
+            return None
+
+    async def send_reminders(self) -> Dict[str, int]:
+        """Основной метод для отправки напоминаний"""
+        results = {'promo': 0, 'inactive': 0}
+
+        async with AsyncSessionLocal() as session:
+            users = await self.get_users_for_reminders(session)
+
+            for reminder_type, user_list in users.items():
+                text = await self.get_reminder_text(session, reminder_type) or self.get_default_text(reminder_type)
+
+                for user_id, username in user_list:
+                    try:
+                        await self.bot.send_message(
+                            chat_id=user_id,
+                            text=text
+                        )
+                        results[reminder_type] += 1
+                        logger.info(
+                            f"Sent {reminder_type} reminder to {username} ({user_id})")
+                    except Exception as e:
+                        logger.error(f"Failed to send to {user_id}: {e}")
+
+        return results
+
+    @staticmethod
+    def get_default_text(reminder_type: str) -> str:
+        """Тексты по умолчанию"""
+        return {
+            'promo': "📢 Не забудьте потренироваться сегодня! Регулярные занятия - залог успеха!",
+            'inactive': "📢 Давно не виделись! Вернитесь к практике сегодня!"
+        }.get(reminder_type, "Не забывайте тренироваться каждый день!")
+
+
+async def send_inactivity_reminders(bot: Bot) -> Dict[str, int]:
+    """Функция для прямого импорта из других модулей"""
+    service = ReminderService(bot)
+    return await service.send_reminders()
+
+
+
+core/services/achievement_service.py
+import logging
+from datetime import datetime
+from sqlalchemy import select, and_, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+from core.database.models import (
+    UserAchievement,
+    Achievement,
+    User,
+    UserStat,
+    UserProgress,
+    Task,
+    Subtopic
+)
+from typing import Optional, List, Tuple
+
+logger = logging.getLogger(__name__)
+
+
+async def check_and_unlock_achievements(
+    session: AsyncSession,
+    user_id: int,
+    is_correct: bool,  # Добавляем параметр is_correct
+    task_id: Optional[int] = None
+) -> list[Achievement]:
+    """Проверяет и разблокирует достижения пользователя."""
+    try:
+        # Получаем все достижения для проверки (без фильтра по типу)
+        stmt = select(Achievement)
+        achievements = (await session.execute(stmt)).scalars().all()
+
+        unlocked = []
+        for achievement in achievements:
+            # Проверяем, не разблокировано ли уже достижение
+            stmt_exists = select(UserAchievement).where(
+                and_(
+                    UserAchievement.user_id == user_id,
+                    UserAchievement.achievement_id == achievement.id
+                )
+            )
+            exists = (await session.execute(stmt_exists)).scalar_one_or_none()
+
+            if not exists and await is_achievement_unlocked(
+                session=session,
+                user_id=user_id,
+                achievement=achievement,
+                is_correct=is_correct,  # Передаем is_correct
+                task_id=task_id
+            ):
+                # Разблокируем достижение
+                user_achievement = UserAchievement(
+                    user_id=user_id,
+                    achievement_id=achievement.id,
+                    unlocked_at=datetime.utcnow(),
+                    progress=100
+                )
+                session.add(user_achievement)
+                unlocked.append(achievement)
+                logger.info(
+                    f"User {user_id} unlocked achievement {achievement.name}")
+
+        return unlocked
+
+    except Exception as e:
+        logger.error(
+            f"Error in check_and_unlock_achievements: {e}", exc_info=True)
+        return []
+
+
+async def is_achievement_already_unlocked(
+    session: AsyncSession,
+    user_id: int,
+    achievement_id: int
+) -> bool:
+    """Проверяет, есть ли у пользователя уже это достижение"""
+    stmt = select(UserAchievement).where(
+        and_(
+            UserAchievement.user_id == user_id,
+            UserAchievement.achievement_id == achievement_id
+        )
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none() is not None
+
+
+async def unlock_achievement(
+    session: AsyncSession,
+    user_id: int,
+    achievement_id: int
+) -> None:
+    """Разблокирует достижение для пользователя"""
+    user_achievement = UserAchievement(
+        user_id=user_id,
+        achievement_id=achievement_id,
+        unlocked_at=datetime.utcnow(),
+        progress=100
+    )
+    session.add(user_achievement)
+    await session.flush()
+
+
+async def is_achievement_unlocked(
+    session: AsyncSession,
+    user_id: int,
+    achievement: Achievement,
+    is_correct: bool,
+    task_id: Optional[int] = None
+) -> bool:
+    """
+    Проверяет условие конкретного достижения.
+    Возвращает True, если условие выполнено.
+    """
+    try:
+        condition = achievement.conditions.lower()
+
+        # Разбираем условие по типам
+        if "solved_tasks" in condition:
+            return await check_solved_tasks_condition(session, user_id, condition)
+        elif "correct_percentage" in condition:
+            return await check_correct_percentage_condition(session, user_id, condition)
+        elif "daily_streak" in condition:
+            return await check_daily_streak_condition(session, user_id, condition)
+        elif "topic_id" in condition and task_id:
+            return await check_topic_condition(session, user_id, condition, task_id)
+        elif "subtopic_id" in condition and task_id:
+            return await check_subtopic_condition(session, user_id, condition, task_id)
+
+        return False
+
+    except Exception as e:
+        logger.error(
+            f"Error checking achievement condition: {e}", exc_info=True)
+        return False
+
+
+async def check_solved_tasks_condition(
+    session: AsyncSession,
+    user_id: int,
+    condition: str
+) -> bool:
+    """Проверяет условие на количество решенных задач"""
+    try:
+        # Пример условия: "solved_tasks >= 10"
+        parts = condition.split()
+        if len(parts) < 3 or parts[0] != "solved_tasks":
+            return False
+
+        operator = parts[1]
+        required = int(parts[2])
+
+        # Получаем статистику пользователя
+        user_stat = await session.get(UserStat, user_id)
+        if not user_stat:
+            return False
+
+        solved = user_stat.correct_answers
+
+        # Применяем оператор сравнения
+        if operator == ">=":
+            return solved >= required
+        elif operator == ">":
+            return solved > required
+        elif operator == "<=":
+            return solved <= required
+        elif operator == "<":
+            return solved < required
+        elif operator == "==":
+            return solved == required
+
+        return False
+
+    except Exception as e:
+        logger.error(f"Error in check_solved_tasks_condition: {e}")
+        return False
+
+
+async def check_correct_percentage_condition(
+    session: AsyncSession,
+    user_id: int,
+    condition: str
+) -> bool:
+    """Проверяет условие на процент правильных ответов"""
+    try:
+        # Пример условия: "correct_percentage > 80 AND topic_id = 3"
+        parts = condition.split()
+        if len(parts) < 3 or parts[0] != "correct_percentage":
+            return False
+
+        operator = parts[1]
+        required = float(parts[2])
+
+        # Получаем статистику пользователя
+        user_stat = await session.get(UserStat, user_id)
+        if not user_stat:
+            return False
+
+        percentage = user_stat.percentage
+
+        # Применяем оператор сравнения
+        if operator == ">=":
+            return percentage >= required
+        elif operator == ">":
+            return percentage > required
+        elif operator == "<=":
+            return percentage <= required
+        elif operator == "<":
+            return percentage < required
+        elif operator == "==":
+            return percentage == required
+
+        return False
+
+    except Exception as e:
+        logger.error(f"Error in check_correct_percentage_condition: {e}")
+        return False
+
+
+async def check_daily_streak_condition(
+    session: AsyncSession,
+    user_id: int,
+    condition: str
+) -> bool:
+    """Проверяет условие на серию дней активности"""
+    try:
+        # Пример условия: "daily_streak >= 5"
+        parts = condition.split()
+        if len(parts) < 3 or parts[0] != "daily_streak":
+            return False
+
+        operator = parts[1]
+        required = int(parts[2])
+
+        # Получаем прогресс пользователя
+        user_progress = await session.get(UserProgress, user_id)
+        if not user_progress:
+            return False
+
+        streak = user_progress.current_streak
+
+        # Применяем оператор сравнения
+        if operator == ">=":
+            return streak >= required
+        elif operator == ">":
+            return streak > required
+        elif operator == "<=":
+            return streak <= required
+        elif operator == "<":
+            return streak < required
+        elif operator == "==":
+            return streak == required
+
+        return False
+
+    except Exception as e:
+        logger.error(f"Error in check_daily_streak_condition: {e}")
+        return False
+
+
+async def check_topic_condition(
+    session: AsyncSession,
+    user_id: int,
+    condition: str,
+    task_id: int
+) -> bool:
+    """Проверяет условие, связанное с конкретной темой"""
+    try:
+        # Пример условия: "solved_tasks >= 10 AND topic_id = 3"
+        task = await session.get(Task, task_id)
+        if not task:
+            return False
+
+        # Проверяем, что условие содержит нужную тему
+        topic_part = next((p for p in condition.split()
+                          if p.startswith("topic_id")), None)
+        if not topic_part:
+            return False
+
+        # Получаем ID темы из условия
+        topic_id = int(topic_part.split("=")[1])
+
+        # Проверяем, что задача относится к нужной теме
+        return task.topic_id == topic_id
+
+    except Exception as e:
+        logger.error(f"Error in check_topic_condition: {e}")
+        return False
+
+
+async def check_subtopic_condition(
+    session: AsyncSession,
+    user_id: int,
+    condition: str,
+    task_id: int
+) -> bool:
+    """Проверяет условие, связанное с конкретной подтемой"""
+    try:
+        # Пример условия: "solved_tasks >= 5 AND subtopic_id = 12"
+        task = await session.get(Task, task_id)
+        if not task or not task.subtopic_id:
+            return False
+
+        # Проверяем, что условие содержит нужную подтему
+        subtopic_part = next((p for p in condition.split()
+                              if p.startswith("subtopic_id")), None)
+        if not subtopic_part:
+            return False
+
+        # Получаем ID подтемы из условия
+        subtopic_id = int(subtopic_part.split("=")[1])
+
+        # Проверяем, что задача относится к нужной подтеме
+        return task.subtopic_id == subtopic_id
+
+    except Exception as e:
+        logger.error(f"Error in check_subtopic_condition: {e}")
+        return False
+
+
+async def get_user_achievements(
+    session: AsyncSession,
+    user_id: int
+) -> list[tuple[UserAchievement, Achievement]]:
+    """
+    Возвращает список достижений пользователя с информацией о каждом достижении.
+    """
+    try:
+        stmt = (
+            select(UserAchievement, Achievement)
+            .join(Achievement, UserAchievement.achievement_id == Achievement.id)
+            .where(UserAchievement.user_id == user_id)
+            .order_by(UserAchievement.unlocked_at.desc())
+        )
+        result = await session.execute(stmt)
+        return result.all()
+    except Exception as e:
+        logger.error(f"Error in get_user_achievements: {e}", exc_info=True)
+        return []
+
+
+
+
+
+core/utils/debounce.py
+from aiogram import types
+from functools import wraps
+import asyncio
+from typing import Callable, Any
+
+
+def throttle(rate: float = 1.0):
+    def decorator(func: Callable):
+        last_called = 0
+
+        @wraps(func)
+        async def wrapped(*args, **kwargs):
+            nonlocal last_called
+            current_time = asyncio.get_event_loop().time()
+
+            if current_time - last_called < rate:
+                if isinstance(args[0], (types.Message, types.CallbackQuery)):
+                    await args[0].answer("⏳ Подождите перед повторным нажатием")
+                return
+
+            last_called = current_time
+            return await func(*args, **kwargs)
+
+        return wrapped
+    return decorator
+
+
+
+core/utils/reminder_jobs.py
+import asyncio
+from datetime import datetime
+from aiogram import Bot
+from config.database import AsyncSessionLocal
+from core.services.reminder_service import check_inactive_users, get_reminder_text
+import logging
+import warnings
+from sqlalchemy import exc as sa_exc
+
+warnings.filterwarnings("ignore", category=sa_exc.SAWarning)
+
+logger = logging.getLogger(__name__)
+
+
+async def send_inactivity_reminders(bot: Bot):
+    """Отправляет напоминания неактивным пользователям"""
+    async with AsyncSessionLocal() as session:
+        try:
+            users = await check_inactive_users(session)
+
+            for user in users:
+                try:
+                    reminder_text = await get_reminder_text(session, 'inactive')
+                    await bot.send_message(
+                        chat_id=user.id,
+                        text=reminder_text
+                    )
+
+                    # Обновляем время последнего напоминания
+                    user.last_interaction_time = datetime.utcnow()
+                    session.add(user)
+
+                except Exception as e:
+                    logger.error(f"Error sending to {user.id}: {e}")
+
+            await session.commit()
+
+        except Exception as e:
+            logger.error(f"Reminder system error: {e}")
+            await session.rollback()
+
+
+core/utils/reminder_scheduler.py
+import asyncio
+from aiogram import Bot
+from core.services.reminder_service import ReminderService
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class ReminderScheduler:
+    def __init__(self, bot: Bot):
+        self.bot = bot
+        self.service = ReminderService(bot)
+        self.task = None
+
+    async def start(self):
+        """Запускает периодическую проверку"""
+        if self.task is None:
+            self.task = asyncio.create_task(self.run())
+
+    async def stop(self):
+        """Останавливает scheduler"""
+        if self.task:
+            self.task.cancel()
+            try:
+                await self.task
+            except asyncio.CancelledError:
+                pass
+            self.task = None
+
+    async def run(self):
+        """Основной цикл"""
+        try:
+            while True:
+                try:
+                    results = await self.service.send_reminders()
+                    logger.info(f"Reminders sent: {results}")
+                except Exception as e:
+                    logger.error(f"Reminder error: {e}")
+
+                await asyncio.sleep(3590)  # Каждый час
+        except asyncio.CancelledError:
+            logger.info("Scheduler stopped")
+
+
+
+
+core/__init__.py
+from .bot import bot, dp, register_handlers, run_bot
+
+__all__ = ['bot', 'dp', 'register_handlers', 'run_bot']
+
+
+
+core/bot.py
+from aiogram import Bot, Dispatcher
+from aiogram.enums import ParseMode
+from config.settings import BOT_TOKEN
+from core.utils.reminder_scheduler import ReminderScheduler
+
+# Инициализация бота
+bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
+dp = Dispatcher()
+reminder_scheduler = None
+
+
+async def register_handlers():
+    """Регистрирует все обработчики команд"""
+    from core.handlers.common import router as common_router
+    from core.handlers.teacher import router as teacher_router
+    from core.handlers.moderator import router as moderator_router
+    from core.handlers.admin import router as admin_router
+    from core.handlers.inline_handlers import router as inline_router
+    from core.handlers.reply_handlers import router as reply_router
+
+    dp.include_router(common_router)
+    dp.include_router(teacher_router)
+    dp.include_router(moderator_router)
+    dp.include_router(admin_router)
+    dp.include_router(inline_router)
+    dp.include_router(reply_router)
+
+
+async def on_startup():
+    """Действия при запуске бота"""
+    global reminder_scheduler
+    reminder_scheduler = ReminderScheduler(bot)
+    await reminder_scheduler.start()
+    await register_handlers()
+
+
+async def on_shutdown():
+    """Действия при остановке бота"""
+    if reminder_scheduler:
+        await reminder_scheduler.stop()
+
+
+def run_bot():
+    """Запускает бота"""
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
+    dp.run_polling(bot)
+
+
+
+/requirements.txt
+aiofiles==23.1.0
+aiogram==3.0.0b7
+aiohttp==3.8.4
+aiomysql==0.2.0
+aiosignal==1.4.0
+alembic==1.16.4
+anyio==4.9.0
+APScheduler==3.11.0
+async-timeout==4.0.3
+attrs==25.3.0
+certifi==2025.7.14
+charset-normalizer==3.4.2
+colorama==0.4.6
+frozenlist==1.7.0
+greenlet==3.2.3
+idna==3.10
+iniconfig==2.1.0
+magic-filter==1.0.12
+Mako==1.3.10
+MarkupSafe==3.0.2
+multidict==6.6.3
+mysql-connector-python==8.1.0
+packaging==25.0
+# -e git+https://github.com/itwistiks/physics_bot.git@d22aa60400c46ccb6eed236dc4c3c342c3e25f8b#egg=physics_bot
+pluggy==1.6.0
+propcache==0.3.2
+protobuf==4.21.12
+pydantic==1.10.22
+Pygments==2.19.2
+PyMySQL==1.1.1
+pytest==8.4.1
+pytest-asyncio==1.1.0
+python-dotenv==1.0.0
+sniffio==1.3.1
+SQLAlchemy==2.0.41
+typing_extensions==4.14.1
+tzdata==2025.2
+tzlocal==5.3.1
+yarl==1.20.1

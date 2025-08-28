@@ -1,0 +1,75 @@
+physics_bot/
+│
+├── config/
+│   ├── __init__.py
+│   ├── database.py                 # Настройки AsyncSessionLocal
+│   └── settings.py                 # Токены, константы
+│
+├── core/
+│   ├── database/
+│   │   ├── __init__.py
+│   │   └── models.py               # SQLAlchemy модели (исправленная версия)
+│   │
+│   ├── handlers/
+│   │   ├── __init__.py
+│   │   ├── admin.py                # Команды для админов
+│   │   ├── moderator.py            # Команды для модеров
+│   │   ├── teacher.py              # Команды для преподаваетлей
+│   │   ├── common.py               # Базовые команды
+│   │   ├── inline_handlers.py      # Обработка inline-кнопок (ответы на задачи)
+│   │   └── reply_handlers.py       # Обработка кнопок меню (практика, теория)
+│   │
+│   ├── filters/                    # Фильтр для команд
+│   │   ├── __init__.py
+│   │   └── admin.py
+│   │
+│   ├── fsm/
+│   │   ├── __init__.py
+│   │   └── states.py       	      # Состояния бота (TaskStates и др.)
+│   │
+│   ├── keyboards/		            # Клавиатуры
+│   │   ├── __init__.py
+│   │   ├── inline.py
+│   │   └── reply.py
+│   │
+│   ├── middlewares/
+│   │   ├── __init__.py
+│   │   ├── cleanup_middleware.py   # Удаляет предыдущие сообщения с кнопками
+│   │   └── user_middleware.py		# Middleware для автоматической регистрации пользователей
+│   │
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── achievement_service.py  # Логика работы с достижениями (проверка/разблокировка)
+│   │   ├── answer_checker.py       # Проверка ответов пользователя
+│   │   ├── answer_processing.py    # (Лишний файл)
+│   │   ├── reminder_service.py     # Отправка напоминаний неактивным пользователям
+│   │   ├── stats_service.py        # Обновление статистики пользователя
+│   │   ├── task_display.py         # Форматирование и показ задач
+│   │   ├── task_service.py         # Основные операции с задачами
+│   │   ├── task_utils.py           # Вспомогательные функции (get_random_task)
+│   │   └── user_service.py         # Работа с пользователями (get_or_create_user)
+│   │
+│   ├── utils/
+│   │   ├── debounce.py             # Декоратор @throttle для защиты от спама кнопок
+│   │   ├── reminder_jobs.py        # Фоновые задачи для отправки напоминаний (Лишний файл)
+│   │   └── reminder_scheduler.py   # Планировщик периодических напоминаний
+│   │
+│   ├── __init__.py
+│   └── bot.py                      # Основной файл инициализации бота
+│
+├── migrations/                     # Миграции
+│   ├── versions/
+│   │   └── ...
+│   ├── env.py
+│   ├── README.md
+│   └── script.py.mako
+│
+├── venv/                           # Виртуальное окружение
+│
+├── .env                            # Переменные окружения (токены, доступы)
+├── .gitignore                      # Игнорируемые файлы для Git
+├── alembic.ini                     # Конфиг Alembic (миграции БД)
+├── README.md                       # Документация проекта
+├── requirements.txt                # Зависимости Python
+├── setup.py                        # Конфигурация пакета
+└── start_bot.py                    # Точка входа (запуск бота)

@@ -1,0 +1,11 @@
+INSERT INTO `subtopics` (`id`, `topic_id`, `name`, `title_ru`) VALUES
+(1, 1, 'kinematics', 'Кинематика'),
+(2, 1, 'dynamics', 'Динамика'),
+(3, 1, 'statics', 'Статика'),
+(4, 2, 'mkt', 'МКТ'),
+(5, 2, 'thermodynamics', 'Термодинамика'),
+(6, 3, 'electrostatics', 'Электростатика'),
+(7, 3, 'current', 'Электрический ток'),
+(8, 3, 'magnetism', 'Магнетизм'),
+(9, 4, 'optics', 'Оптика'),
+(10, 4, 'decay', 'Реакции распада');
